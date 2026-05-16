@@ -250,6 +250,11 @@ threat_watch/
 `streamlit run dashboard.py` でWebダッシュボードを起動できる
 （要 `requirements-dashboard.txt` のインストール）。
 
+`mcp_server.py` は同じThreat RegisterをModel Context Protocolで公開する。
+プロジェクト直下の `.mcp.json` をClaude CLI / Claude Desktopが読むことで、
+自然言語でクエリ・status更新ができる（`python main.py review`のMCP版に相当）。
+これによりUI追加・ボタン実装をせずに、検索とトリアージをチャットで完結できる。
+
 `python main.py run` で[1]〜[10]を一括実行する。
 
 ---

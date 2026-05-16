@@ -279,6 +279,71 @@ RSS の `summary` が短い場合（500字未満）、`url` から記事本文�
 - 失敗時は元の summary をそのまま使用（非致命的）
 - `--no-fetch-body` で無効化
 
+## MCP統合（Claude CLI から自然言語で操作）
+
+[mcp_server.py](mcp_server.py) はThreat Register をModel Context Protocol で公開します。Claude CLI / Claude Desktop / Cursor 等から自然言語クエリ・対応記録ができます。
+
+### Claude CLI での有効化
+
+プロジェクト直下に [.mcp.json](.mcp.json) が用意されているので、このディレクトリでClaude CLI を起動するだけで自動的にMCPサーバーが立ち上がります。
+
+```bash
+cd /home/hacker/Project/threat_watch
+claude    # 起動時に .mcp.json を読み込む
+```
+
+初回は MCP サーバーの承認プロンプトが出るので許可してください。
+
+### 使い方の例（Claudeに自然言語で）
+
+```
+過去7日のHighアイテムで、KEV該当のうち status=New のものをリストして
+```
+
+```
+AI-THREAT-0095 を Actioned にして、ノートに「MLflow 3.10.0 にアップグレード済み」と記録して
+```
+
+```
+CVE-2025-55182 がどのソースから報告されているか教えて
+```
+
+```
+今月の AI Supply Chain カテゴリの件数は先月比で増えてる？
+```
+
+```
+KEVで期限が3日以内に切れるアイテムを教えて
+```
+
+### 提供ツール
+
+| Tool | 用途 |
+|---|---|
+| `query_threats` | priority/status/category/source/cve/days等の柔軟な絞り込み |
+| `get_threat` | threat_id 1件の全フィールド |
+| `cve_cluster` | 同一CVEを参照する全レコード |
+| `list_kev_due` | KEV対応期限切迫リスト |
+| `recent_high` | 直近の対応待ちHighアイテム（よく使う組合せ） |
+| `stats` | カテゴリ別/優先度別の集計 |
+| `mark_reviewed` | レビュー記録（書き込み） |
+
+### Claude Desktop での設定
+
+`~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) または
+`%APPDATA%\Claude\claude_desktop_config.json` (Windows) に:
+
+```json
+{
+  "mcpServers": {
+    "ai-threat-watch": {
+      "command": "/絶対パス/threat_watch/.venv/bin/python",
+      "args": ["/絶対パス/threat_watch/mcp_server.py"]
+    }
+  }
+}
+```
+
 ## Streamlitダッシュボード
 
 ```bash
