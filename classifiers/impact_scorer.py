@@ -64,8 +64,11 @@ class ImpactScorer:
         body: str,
         category: str,
         severity: str,
+        is_ai_related: bool = True,
     ) -> ImpactDecision:
         blob = f"{title}\n{body}".lower()
+        # Be inclusive: trust the classifier's flag, OR an AI-specific category.
+        ai_relevant = bool(is_ai_related) or category not in ("Other Security", "Not AI-related")
 
         matched_assets: list[dict[str, Any]] = []
         for asset in self._assets:
@@ -99,7 +102,9 @@ class ImpactScorer:
             asset_names = ""
             reason = "No company asset match; needs human triage to confirm exposure."
 
-        priority = self._priority(company_impact, severity, critical_hit, is_high_risk_category)
+        priority = self._priority(
+            company_impact, severity, critical_hit, is_high_risk_category, ai_relevant
+        )
         action = _DEFAULT_ACTIONS.get(category, "Triage per standard vulnerability management process.")
 
         return ImpactDecision(
@@ -116,14 +121,31 @@ class ImpactScorer:
         severity: str,
         critical_hit: bool,
         is_high_risk_category: bool,
+        ai_relevant: bool,
     ) -> str:
+        """Decide priority. AI-relevance is a near-required condition for High,
+        EXCEPT when the item directly matches a company-owned asset
+        (company_impact == 'Yes'), where we keep High to avoid missing
+        infrastructure-level issues around our AI stack."""
+
+        # 1) Company asset directly affected — AI relevance not required.
+        if company_impact == "Yes":
+            if severity in ("Critical", "High", "Medium"):
+                return "High"
+            return "Medium"
+
+        # 2) Non-AI items: cap at Medium regardless of severity.
+        if not ai_relevant:
+            if severity in ("Critical", "High"):
+                return "Medium"
+            return "Low"
+
+        # 3) AI-related items without direct asset match.
         if severity == "Critical":
             return "High"
-        if company_impact == "Yes" and severity in ("High", "Medium"):
-            return "High"
-        if company_impact == "Yes":
-            return "Medium"
-        if company_impact == "Unknown" and (severity == "High" or critical_hit or is_high_risk_category):
+        if company_impact == "Unknown" and (
+            severity == "High" or critical_hit or is_high_risk_category
+        ):
             return "High"
         if company_impact == "Unknown":
             return "Medium"

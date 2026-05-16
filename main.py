@@ -114,7 +114,11 @@ def cmd_collect(args: argparse.Namespace) -> int:
             try:
                 classification = classifier.classify(item.title, item.summary)
                 decision = scorer.score(
-                    item.title, item.summary, classification.category, classification.severity
+                    item.title,
+                    item.summary,
+                    classification.category,
+                    classification.severity,
+                    is_ai_related=classification.is_ai_related,
                 )
             except Exception as exc:  # noqa: BLE001
                 log.exception("Classification failed for %s: %s", item.url, exc)
