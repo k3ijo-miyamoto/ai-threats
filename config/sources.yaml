@@ -1,0 +1,59 @@
+# AI Threat Watch - 情報源定義
+# type: rss | github_advisory
+# enabled: false にすると収集対象から外れる
+
+sources:
+  # 公的機関
+  - name: CISA Cybersecurity Advisories
+    type: rss
+    url: https://www.cisa.gov/cybersecurity-advisories/all.xml
+    category: public_sector
+    enabled: true
+
+  - name: CISA Alerts
+    type: rss
+    url: https://www.cisa.gov/news-events/cybersecurity-advisories/all.xml
+    category: public_sector
+    enabled: true
+
+  # AI / Security Vendor
+  - name: Microsoft Security Blog
+    type: rss
+    url: https://www.microsoft.com/en-us/security/blog/feed/
+    category: vendor
+    enabled: true
+
+  - name: Google Threat Intelligence
+    type: rss
+    url: https://cloud.google.com/blog/topics/threat-intelligence/rss
+    category: vendor
+    enabled: true
+
+  - name: GitHub Security Blog
+    type: rss
+    url: https://github.blog/security/feed/
+    category: vendor
+    enabled: true
+
+  # AI Vendor
+  - name: OpenAI News
+    type: rss
+    url: https://openai.com/news/rss.xml
+    category: ai_vendor
+    enabled: false  # ノイズ多 (製品発表中心)。脅威観点で必要時のみ有効化
+
+  - name: Anthropic News
+    type: rss
+    url: https://www.anthropic.com/news/rss.xml
+    category: ai_vendor
+    enabled: true
+
+  # 脆弱性
+  - name: GitHub Advisory Database
+    type: github_advisory
+    url: https://api.github.com/advisories
+    category: vulnerability
+    enabled: true
+    params:
+      per_page: 50
+      severity: high
