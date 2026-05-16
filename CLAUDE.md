@@ -76,9 +76,11 @@ Notification (Slack / Teams) / Weekly Report
 
 ### 公的機関・標準
 
-- CISA
-- NIST
-- IPA
+- CISA (Cybersecurity Advisories) — 実装済み
+- NIST — 参照ドキュメント
+- IPA (セキュリティ情報) — 実装済み
+- JPCERT/CC (注意喚起・WeeklyReport) — 実装済み
+- JVN (セキュリティ情報) — 実装済み
 - ENISA
 - OWASP LLM Top 10
 - MITRE ATLAS
@@ -197,12 +199,20 @@ threat_watch/
     THREAT_WATCH_CLASSIFIER 環境変数 or --classifier 引数で切替
     Claude失敗時は自動的にrule-basedへフォールバック
 
+[4b] CVE エンリッチメント (classifiers/cve_enricher.py)
+    title/summary/extraからCVE IDを正規表現で抽出
+    CISA KEV (Known Exploited Vulnerabilities) と突合（ローカルキャッシュ6h）
+    EPSS API (api.first.org) でバッチ問い合わせし悪用予測スコアを取得
+    in_kev / epss_max_score を後段の impact_scorer に渡す
+
 [5] 自社影響判定 (classifiers/impact_scorer.py)
     company_assets.yamlのkeywords（単語境界マッチ）と照合し、Yes / No / Unknownを判定
+    KEV-listed or EPSS>=0.7 はテキスト由来のcritical_keywordと同等扱い
 
 [6] 優先度付け (classifiers/impact_scorer.py:_priority)
     AI関連必須ゲート: 非AI関連はCritical/HighでもMedium止まり
     例外: company_impact == Yes（自社アセット直撃）は AI関連でなくてもHigh維持
+    KEV/EPSSの客観指標も critical_hit として優先度判定に反映
 
 [7] 保存 (storage/db.py)
     SQLite (threat_register.sqlite) + CSVミラー (threat_register.csv)

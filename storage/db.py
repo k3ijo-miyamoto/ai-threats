@@ -36,7 +36,17 @@ CREATE TABLE IF NOT EXISTS threat_register (
     status           TEXT NOT NULL DEFAULT 'New',
     notified         INTEGER NOT NULL DEFAULT 0,
     extra_json       TEXT,
-    tailored_action  TEXT
+    tailored_action  TEXT,
+    cve_ids          TEXT,
+    in_kev           INTEGER NOT NULL DEFAULT 0,
+    kev_due_date     TEXT,
+    kev_known_ransomware INTEGER NOT NULL DEFAULT 0,
+    epss_max_score   REAL NOT NULL DEFAULT 0,
+    epss_max_cve     TEXT,
+    reviewed_at      TEXT,
+    reviewer         TEXT,
+    review_note      TEXT,
+    corrected_category TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_threat_collected_at ON threat_register(collected_at);
@@ -68,12 +78,24 @@ class ThreatRecord:
     status: str = "New"
     notified: bool = False
     tailored_action: str = ""
+    cve_ids: str = ""
+    in_kev: bool = False
+    kev_due_date: str = ""
+    kev_known_ransomware: bool = False
+    epss_max_score: float = 0.0
+    epss_max_cve: str = ""
+    reviewed_at: str = ""
+    reviewer: str = ""
+    review_note: str = ""
+    corrected_category: str = ""
     extra: dict[str, Any] | None = None
 
     def to_row(self) -> dict[str, Any]:
         d = asdict(self)
         d["is_ai_related"] = 1 if self.is_ai_related else 0
         d["notified"] = 1 if self.notified else 0
+        d["in_kev"] = 1 if self.in_kev else 0
+        d["kev_known_ransomware"] = 1 if self.kev_known_ransomware else 0
         d["extra_json"] = json.dumps(self.extra or {}, ensure_ascii=False)
         d.pop("extra", None)
         return d
@@ -84,6 +106,8 @@ CSV_FIELDS = [
     "title", "url", "summary", "category", "severity",
     "company_impact", "affected_asset", "reason", "recommended_action",
     "priority", "classifier_used", "is_ai_related", "status",
+    "cve_ids", "in_kev", "kev_due_date", "epss_max_score", "epss_max_cve",
+    "reviewer", "reviewed_at", "corrected_category",
 ]
 
 
@@ -101,7 +125,20 @@ class ThreatRegister:
             conn.executescript(_SCHEMA)
             # Lightweight migrations for older DBs: add columns introduced later.
             existing = {row["name"] for row in conn.execute("PRAGMA table_info(threat_register)")}
-            for col, ddl in (("tailored_action", "ALTER TABLE threat_register ADD COLUMN tailored_action TEXT"),):
+            migrations = (
+                ("tailored_action",      "ALTER TABLE threat_register ADD COLUMN tailored_action TEXT"),
+                ("cve_ids",              "ALTER TABLE threat_register ADD COLUMN cve_ids TEXT"),
+                ("in_kev",               "ALTER TABLE threat_register ADD COLUMN in_kev INTEGER NOT NULL DEFAULT 0"),
+                ("kev_due_date",         "ALTER TABLE threat_register ADD COLUMN kev_due_date TEXT"),
+                ("kev_known_ransomware", "ALTER TABLE threat_register ADD COLUMN kev_known_ransomware INTEGER NOT NULL DEFAULT 0"),
+                ("epss_max_score",       "ALTER TABLE threat_register ADD COLUMN epss_max_score REAL NOT NULL DEFAULT 0"),
+                ("epss_max_cve",         "ALTER TABLE threat_register ADD COLUMN epss_max_cve TEXT"),
+                ("reviewed_at",          "ALTER TABLE threat_register ADD COLUMN reviewed_at TEXT"),
+                ("reviewer",             "ALTER TABLE threat_register ADD COLUMN reviewer TEXT"),
+                ("review_note",          "ALTER TABLE threat_register ADD COLUMN review_note TEXT"),
+                ("corrected_category",   "ALTER TABLE threat_register ADD COLUMN corrected_category TEXT"),
+            )
+            for col, ddl in migrations:
                 if col not in existing:
                     conn.execute(ddl)
             conn.commit()

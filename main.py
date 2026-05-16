@@ -20,7 +20,7 @@ from typing import Any
 
 import yaml
 
-from classifiers import ImpactScorer, MitigationAdvisor, build_classifier
+from classifiers import CVEEnricher, ImpactScorer, MitigationAdvisor, build_classifier
 from collectors import GitHubAdvisoryCollector, RSSCollector, ThreatItem
 from notifiers import SlackNotifier, TeamsNotifier
 from reports import generate_weekly_report
@@ -92,6 +92,7 @@ def cmd_collect(args: argparse.Namespace) -> int:
     register = ThreatRegister(DEFAULT_SQLITE, DEFAULT_CSV)
     classifier = build_classifier(args.classifier)
     scorer = ImpactScorer(company_cfg)
+    enricher = CVEEnricher(cache_dir=DATA_DIR / "cache")
 
     log.info("Classifier: %s", classifier.name)
 
@@ -113,12 +114,19 @@ def cmd_collect(args: argparse.Namespace) -> int:
                 continue
             try:
                 classification = classifier.classify(item.title, item.summary)
+                enrichment = enricher.enrich({
+                    "title": item.title,
+                    "summary": item.summary,
+                    "extra": {"source_extra": item.extra},
+                })
                 decision = scorer.score(
                     item.title,
                     item.summary,
                     classification.category,
                     classification.severity,
                     is_ai_related=classification.is_ai_related,
+                    in_kev=enrichment.in_kev,
+                    epss_score=enrichment.epss_max_score,
                 )
             except Exception as exc:  # noqa: BLE001
                 log.exception("Classification failed for %s: %s", item.url, exc)
@@ -144,6 +152,12 @@ def cmd_collect(args: argparse.Namespace) -> int:
                 priority=decision.priority,
                 classifier_used=classification.classifier_used,
                 is_ai_related=classification.is_ai_related,
+                cve_ids=",".join(enrichment.cve_ids),
+                in_kev=enrichment.in_kev,
+                kev_due_date=enrichment.kev_due_date,
+                kev_known_ransomware=enrichment.kev_known_ransomware,
+                epss_max_score=enrichment.epss_max_score,
+                epss_max_cve=enrichment.epss_max_cve,
                 extra={"raw_tags": item.raw_tags, "source_extra": item.extra},
             )
             if register.insert(record):
@@ -248,6 +262,55 @@ def cmd_report(args: argparse.Namespace) -> int:
     return 0
 
 
+_ALLOWED_STATUSES = {"New", "Reviewing", "Actioned", "Closed", "FalsePositive"}
+
+
+def cmd_review(args: argparse.Namespace) -> int:
+    """Record human review on a threat: status, correction, note."""
+    import sqlite3
+    from datetime import datetime, timezone
+
+    threat_id = args.threat_id
+    updates: list[tuple[str, Any]] = []
+
+    if args.status:
+        if args.status not in _ALLOWED_STATUSES:
+            print(f"Invalid status. Allowed: {sorted(_ALLOWED_STATUSES)}")
+            return 2
+        updates.append(("status", args.status))
+    if args.correct_category is not None:
+        updates.append(("corrected_category", args.correct_category))
+    if args.note is not None:
+        updates.append(("review_note", args.note))
+    if args.priority is not None:
+        if args.priority not in ("High", "Medium", "Low"):
+            print("Invalid priority. Allowed: High, Medium, Low")
+            return 2
+        updates.append(("priority", args.priority))
+
+    if not updates:
+        print("Nothing to update. Provide at least one of --status / --correct-category / --note / --priority.")
+        return 2
+
+    updates.append(("reviewed_at", datetime.now(timezone.utc).isoformat()))
+    updates.append(("reviewer", args.reviewer or os.environ.get("USER") or "unknown"))
+
+    set_clause = ", ".join(f"{col} = ?" for col, _ in updates)
+    values = [v for _, v in updates] + [threat_id]
+
+    with sqlite3.connect(DEFAULT_SQLITE) as conn:
+        cur = conn.execute(f"UPDATE threat_register SET {set_clause} WHERE threat_id = ?", values)
+        if cur.rowcount == 0:
+            print(f"Threat not found: {threat_id}")
+            return 1
+        conn.commit()
+
+    register = ThreatRegister(DEFAULT_SQLITE, DEFAULT_CSV)
+    register.export_csv()
+    print(f"reviewed: {threat_id} ({', '.join(c for c, _ in updates if c not in ('reviewed_at','reviewer'))})")
+    return 0
+
+
 def cmd_stats(_args: argparse.Namespace) -> int:
     register = ThreatRegister(DEFAULT_SQLITE, DEFAULT_CSV)
     stats = register.stats()
@@ -300,6 +363,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_stats = sub.add_parser("stats", help="Show register statistics")
     p_stats.set_defaults(func=cmd_stats)
+
+    p_review = sub.add_parser("review", help="Record human review on a threat record")
+    p_review.add_argument("threat_id", help="e.g., AI-THREAT-0042")
+    p_review.add_argument("--status", help="New|Reviewing|Actioned|Closed|FalsePositive")
+    p_review.add_argument("--correct-category", dest="correct_category", help="Reviewer-corrected category")
+    p_review.add_argument("--priority", help="High|Medium|Low (override)")
+    p_review.add_argument("--note", help="Free-form review note")
+    p_review.add_argument("--reviewer", help="Reviewer identifier (defaults to $USER)")
+    p_review.set_defaults(func=cmd_review)
 
     p_run = sub.add_parser("run", help="collect -> advise (if API key) -> notify -> report")
     p_run.add_argument("--classifier", default=None, help="rule-based|claude (default: env)")

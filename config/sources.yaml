@@ -48,6 +48,25 @@ sources:
     category: ai_vendor
     enabled: true
 
+  # 日本公的機関
+  - name: IPA セキュリティ情報
+    type: rss
+    url: https://www.ipa.go.jp/security/alert-rss.rdf
+    category: public_sector_jp
+    enabled: true
+
+  - name: JPCERT/CC 注意喚起・WeeklyReport
+    type: rss
+    url: https://www.jpcert.or.jp/rss/jpcert-all.rdf
+    category: public_sector_jp
+    enabled: true
+
+  - name: JVN セキュリティ情報
+    type: rss
+    url: https://jvn.jp/rss/jvn.rdf
+    category: vulnerability_jp
+    enabled: true
+
   # 脆弱性
   - name: GitHub Advisory Database
     type: github_advisory

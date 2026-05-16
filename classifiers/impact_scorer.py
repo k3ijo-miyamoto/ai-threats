@@ -65,6 +65,8 @@ class ImpactScorer:
         category: str,
         severity: str,
         is_ai_related: bool = True,
+        in_kev: bool = False,
+        epss_score: float = 0.0,
     ) -> ImpactDecision:
         blob = f"{title}\n{body}".lower()
         # Be inclusive: trust the classifier's flag, OR an AI-specific category.
@@ -77,14 +79,26 @@ class ImpactScorer:
                 matched_assets.append(asset)
 
         critical_hit = any(_keyword_matches(k, blob) for k in self._critical_keywords)
+        # KEV listing or high EPSS score is treated as an objective critical signal,
+        # in addition to the textual heuristics above.
+        if in_kev or epss_score >= 0.7:
+            critical_hit = True
         is_high_risk_category = category in self._high_risk_categories
+
+        # Build CVE-context fragments once; used in all branches below.
+        kev_note = "Listed in CISA KEV (actively exploited)." if in_kev else ""
+        epss_note = f"EPSS score {epss_score:.2f}." if epss_score >= 0.7 else ""
 
         if matched_assets:
             company_impact = "Yes"
             asset_names = ", ".join(a.get("name", "?") for a in matched_assets)
             reason_parts = [f"Matches company asset(s): {asset_names}."]
-            if critical_hit:
+            if critical_hit and not (in_kev or epss_score >= 0.7):
                 reason_parts.append("Critical keyword detected (e.g., RCE / credential leak / active exploitation).")
+            if kev_note:
+                reason_parts.append(kev_note)
+            if epss_note:
+                reason_parts.append(epss_note)
             reason = " ".join(reason_parts)
         elif is_high_risk_category or critical_hit:
             company_impact = "Unknown"
@@ -93,6 +107,10 @@ class ImpactScorer:
                 "No direct asset match, but category or wording suggests potential exposure "
                 f"(category={category}; critical_keyword={critical_hit})."
             )
+            if kev_note:
+                reason += " " + kev_note
+            if epss_note:
+                reason += " " + epss_note
         elif category == "Not AI-related":
             company_impact = "No"
             asset_names = ""
@@ -101,6 +119,10 @@ class ImpactScorer:
             company_impact = "Unknown"
             asset_names = ""
             reason = "No company asset match; needs human triage to confirm exposure."
+            if kev_note:
+                reason += " " + kev_note
+            if epss_note:
+                reason += " " + epss_note
 
         priority = self._priority(
             company_impact, severity, critical_hit, is_high_risk_category, ai_relevant

@@ -9,6 +9,7 @@ __pycache__/
 data/*.sqlite
 data/*.csv
 data/*.json
+data/cache/
 reports/*.md
 !reports/.gitkeep
 .DS_Store

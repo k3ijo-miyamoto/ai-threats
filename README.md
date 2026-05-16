@@ -49,6 +49,13 @@ python main.py run
 
 # 統計
 python main.py stats
+
+# 人間レビュー記録（status / category / priority / note）
+python main.py review AI-THREAT-0042 \
+    --status Reviewing \
+    --correct-category "Not AI-related" \
+    --priority Low \
+    --note "誤検知。実際は IoT 機器の問題で AI 経路なし"
 ```
 
 ## 典型的な運用フロー
@@ -170,16 +177,49 @@ SLACK_WEBHOOK_URL=https://hooks.slack.com/services/T.../B.../...
 | company_impact | Yes / No / Unknown |
 | affected_asset | マッチした自社AIアセット |
 | reason | 影響判定の理由 |
-| recommended_action | 推奨アクション |
+| recommended_action | 推奨アクション（カテゴリ汎用） |
+| tailored_action | High優先度に対するClaude生成の個別対策 |
 | priority | High / Medium / Low |
 | classifier_used | rule-based / claude |
-| status | New / Reviewing / Actioned / Closed |
-| notified | Teams通知済みフラグ |
+| status | New / Reviewing / Actioned / Closed / FalsePositive |
+| notified | Teams/Slack通知済みフラグ |
+| cve_ids | 検出されたCVE ID（カンマ区切り） |
+| in_kev | CISA KEV（実環境で悪用中）に掲載されているか |
+| kev_due_date | 米連邦機関向けKEV対応期限 |
+| epss_max_score | EPSSスコア最大値（0.0-1.0、悪用予測確率） |
+| epss_max_cve | epss_max_scoreに対応するCVE |
+| reviewed_at / reviewer / review_note | 人間レビューの記録 |
+| corrected_category | レビュアーが修正したカテゴリ |
 
 ## 通知ルール
 
 `main.py notify` は `priority = High` かつ `notified = 0` のレコードを送信する。
 判定ロジックは [classifiers/impact_scorer.py](classifiers/impact_scorer.py) を参照。
+
+## CVE エンリッチメント
+
+`collect` は各脅威からCVE ID (`CVE-YYYY-NNNN`形式) を自動抽出し、以下と突合する:
+
+- **CISA KEV** (Known Exploited Vulnerabilities) — 実環境で悪用中のCVE一覧。1日1回 [data/cache/kev.json](data/cache/kev.json) にキャッシュ
+- **EPSS API** (FIRST.org) — 30日以内の悪用予測スコア（0.0-1.0）
+
+`in_kev=True` または `epss>=0.7` を検出すると、`impact_scorer` の `critical_hit` フラグが立ち、優先度がHighに昇格する（AI関連必須ゲートは適用）。
+
+## 人間レビューのフィードバック
+
+AI判定は一次判定のため、レビュアーが修正できる仕組みを用意:
+
+```bash
+python main.py review AI-THREAT-0042 \
+    --status FalsePositive \
+    --correct-category "Not AI-related" \
+    --priority Low \
+    --note "Cisco IOSの脆弱性で、AI関連ではない"
+```
+
+- `status`: New / Reviewing / Actioned / Closed / FalsePositive
+- `corrected_category`: 元の `category` は変えず、別カラムに記録（学習データとして活用予定）
+- `reviewer`: 未指定時は `$USER` 環境変数を使用
 
 ## トラブルシューティング
 

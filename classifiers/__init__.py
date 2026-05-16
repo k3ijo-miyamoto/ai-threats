@@ -8,6 +8,7 @@ from .ai_threat_classifier import (
 )
 from .impact_scorer import ImpactScorer, ImpactDecision
 from .mitigation_advisor import MitigationAdvisor
+from .cve_enricher import CVEEnricher, CVEEnrichment
 
 __all__ = [
     "AIClassification",
@@ -19,4 +20,6 @@ __all__ = [
     "ImpactScorer",
     "ImpactDecision",
     "MitigationAdvisor",
+    "CVEEnricher",
+    "CVEEnrichment",
 ]
