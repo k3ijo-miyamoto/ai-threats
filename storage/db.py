@@ -221,6 +221,64 @@ class ThreatRegister:
             )
             return list(cur.fetchall())
 
+    def cve_already_notified(self, cve_ids: str) -> list[sqlite3.Row]:
+        """Return previously-notified rows that share ANY CVE id with cve_ids."""
+        if not cve_ids:
+            return []
+        targets = [c.strip().upper() for c in cve_ids.split(",") if c.strip()]
+        if not targets:
+            return []
+        with self._connect() as conn:
+            # SQLite has no array overlap; use LIKE for each CVE.
+            clauses = " OR ".join(["UPPER(cve_ids) LIKE ?"] * len(targets))
+            params = [f"%{c}%" for c in targets]
+            cur = conn.execute(
+                f"SELECT threat_id, source, title, cve_ids, collected_at "
+                f"FROM threat_register WHERE notified = 1 AND ({clauses}) "
+                f"ORDER BY collected_at DESC",
+                params,
+            )
+            return list(cur.fetchall())
+
+    def cve_clusters(self, min_size: int = 2) -> list[dict[str, Any]]:
+        """Group records by CVE id; returns clusters with >= min_size members."""
+        with self._connect() as conn:
+            cur = conn.execute(
+                "SELECT threat_id, source, title, cve_ids, priority, severity, "
+                "collected_at FROM threat_register WHERE cve_ids != '' AND cve_ids IS NOT NULL"
+            )
+            rows = cur.fetchall()
+        buckets: dict[str, list[sqlite3.Row]] = {}
+        for r in rows:
+            for cve in (r["cve_ids"] or "").split(","):
+                cve = cve.strip().upper()
+                if cve:
+                    buckets.setdefault(cve, []).append(r)
+        clusters: list[dict[str, Any]] = []
+        for cve, members in buckets.items():
+            if len(members) >= min_size:
+                clusters.append({
+                    "cve": cve,
+                    "members": [dict(m) for m in members],
+                    "sources": sorted({m["source"] for m in members}),
+                })
+        clusters.sort(key=lambda c: (-len(c["members"]), c["cve"]))
+        return clusters
+
+    def kev_due_within(self, days: int = 7) -> list[sqlite3.Row]:
+        """Return KEV-listed records whose due date is within `days` from now."""
+        from datetime import datetime, timedelta, timezone
+        cutoff = (datetime.now(timezone.utc) + timedelta(days=days)).date().isoformat()
+        with self._connect() as conn:
+            cur = conn.execute(
+                "SELECT * FROM threat_register "
+                "WHERE in_kev = 1 AND kev_due_date != '' AND kev_due_date IS NOT NULL "
+                "AND kev_due_date <= ? "
+                "ORDER BY kev_due_date ASC",
+                (cutoff,),
+            )
+            return list(cur.fetchall())
+
     def export_csv(self) -> None:
         if not self.csv_path:
             return

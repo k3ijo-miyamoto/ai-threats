@@ -225,6 +225,54 @@ class RuleBasedClassifier(Classifier):
 # --------------------------------------------------------------------------- #
 
 
+def load_few_shot_examples(sqlite_path: str | None = None, limit: int = 5) -> list[dict[str, str]]:
+    """Read reviewer-corrected category examples from the register, if available."""
+    if not sqlite_path:
+        return []
+    try:
+        import sqlite3
+        from pathlib import Path
+        if not Path(sqlite_path).exists():
+            return []
+        with sqlite3.connect(sqlite_path) as conn:
+            conn.row_factory = sqlite3.Row
+            cur = conn.execute(
+                "SELECT title, summary, category, corrected_category, review_note "
+                "FROM threat_register "
+                "WHERE corrected_category IS NOT NULL AND corrected_category != '' "
+                "AND corrected_category != category "
+                "ORDER BY reviewed_at DESC LIMIT ?",
+                (limit,),
+            )
+            return [dict(r) for r in cur.fetchall()]
+    except Exception as exc:  # noqa: BLE001
+        log.debug("Few-shot loading skipped: %s", exc)
+        return []
+
+
+def _format_few_shot_block(examples: list[dict[str, str]]) -> str:
+    if not examples:
+        return ""
+    lines = [
+        "",
+        "Reviewer-corrected examples (use these to refine your judgement for similar items):",
+    ]
+    for ex in examples:
+        title = (ex.get("title") or "").strip()[:200]
+        summary = (ex.get("summary") or "").strip()[:300]
+        wrong = (ex.get("category") or "").strip()
+        right = (ex.get("corrected_category") or "").strip()
+        note = (ex.get("review_note") or "").strip()[:200]
+        lines.append(
+            f"- Title: {title!r}\n"
+            f"  Initial AI category: {wrong}\n"
+            f"  Correct category: {right}\n"
+            + (f"  Reviewer note: {note}\n" if note else "")
+            + (f"  Summary excerpt: {summary}\n" if summary else "")
+        )
+    return "\n".join(lines)
+
+
 _CLAUDE_SYSTEM_PROMPT = """You are an AI security analyst.
 Classify the given threat intelligence item into EXACTLY ONE of these categories:
 - Prompt Injection
@@ -253,7 +301,12 @@ Return ONLY a JSON object with these exact keys (no markdown, no commentary):
 class ClaudeClassifier(Classifier):
     name = "claude"
 
-    def __init__(self, api_key: str | None = None, model: str = "claude-haiku-4-5-20251001") -> None:
+    def __init__(
+        self,
+        api_key: str | None = None,
+        model: str = "claude-haiku-4-5-20251001",
+        few_shot_examples: list[dict[str, str]] | None = None,
+    ) -> None:
         try:
             import anthropic  # type: ignore
         except ImportError as exc:  # pragma: no cover
@@ -262,6 +315,9 @@ class ClaudeClassifier(Classifier):
         self._client = anthropic.Anthropic(api_key=api_key or os.environ.get("ANTHROPIC_API_KEY"))
         self._model = model
         self._fallback = RuleBasedClassifier()
+        self._system_prompt = _CLAUDE_SYSTEM_PROMPT + _format_few_shot_block(few_shot_examples or [])
+        if few_shot_examples:
+            log.info("ClaudeClassifier loaded with %d few-shot examples", len(few_shot_examples))
 
     def classify(self, title: str, body: str) -> AIClassification:
         user_msg = f"Title: {title}\n\nContent:\n{body[:6000]}"
@@ -269,7 +325,7 @@ class ClaudeClassifier(Classifier):
             resp = self._client.messages.create(
                 model=self._model,
                 max_tokens=512,
-                system=_CLAUDE_SYSTEM_PROMPT,
+                system=self._system_prompt,
                 messages=[{"role": "user", "content": user_msg}],
             )
             text_parts = []
@@ -324,15 +380,20 @@ def _parse_json_block(text: str) -> dict[str, Any]:
 # --------------------------------------------------------------------------- #
 
 
-def build_classifier(mode: str | None = None) -> Classifier:
-    """Build classifier. Mode resolution order: arg > env > default(rule-based)."""
+def build_classifier(mode: str | None = None, sqlite_path: str | None = None) -> Classifier:
+    """Build classifier. Mode resolution order: arg > env > default(rule-based).
+
+    If sqlite_path is given and the Claude classifier is selected, load up to
+    5 reviewer-corrected examples to provide as few-shot context.
+    """
     chosen = (mode or os.environ.get("THREAT_WATCH_CLASSIFIER") or "rule-based").strip().lower()
     if chosen in ("claude", "anthropic"):
         if not os.environ.get("ANTHROPIC_API_KEY"):
             log.warning("ANTHROPIC_API_KEY not set; using rule-based classifier")
             return RuleBasedClassifier()
         try:
-            return ClaudeClassifier()
+            examples = load_few_shot_examples(sqlite_path=sqlite_path, limit=5)
+            return ClaudeClassifier(few_shot_examples=examples)
         except Exception as exc:  # noqa: BLE001
             log.warning("Failed to init Claude classifier (%s); using rule-based", exc)
             return RuleBasedClassifier()

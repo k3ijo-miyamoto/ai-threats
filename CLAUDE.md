@@ -199,11 +199,21 @@ threat_watch/
     THREAT_WATCH_CLASSIFIER 環境変数 or --classifier 引数で切替
     Claude失敗時は自動的にrule-basedへフォールバック
 
+[3b] 一次情報本文取得 (collectors/article_fetcher.py)
+    RSSのsummaryが短い場合（<500字）、URLから記事本文をtrafilaturaで抽出
+    GitHub Advisory / Twitter / YouTube等は自動スキップ
+    失敗時はoriginal summaryをそのまま使用
+
 [4b] CVE エンリッチメント (classifiers/cve_enricher.py)
     title/summary/extraからCVE IDを正規表現で抽出
     CISA KEV (Known Exploited Vulnerabilities) と突合（ローカルキャッシュ6h）
     EPSS API (api.first.org) でバッチ問い合わせし悪用予測スコアを取得
     in_kev / epss_max_score を後段の impact_scorer に渡す
+
+[4c] Few-shot学習 (classifiers/ai_threat_classifier.py:load_few_shot_examples)
+    過去のレビュー結果（corrected_category != category）を直近5件抽出
+    Claude classifierのsystem promptに注入し、自社固有の判断基準に適応させる
+    `python main.py review` でレビューを蓄積するほど精度が向上する設計
 
 [5] 自社影響判定 (classifiers/impact_scorer.py)
     company_assets.yamlのkeywords（単語境界マッチ）と照合し、Yes / No / Unknownを判定
@@ -228,10 +238,17 @@ threat_watch/
     priority=High かつ notified=0 を Slack / Teams へ送信
     両方設定すれば両方に送信、片方ならその片方のみ
     notified=1 へ更新して二重送信防止
+    CVE重複排除: 同一CVEを既通知の場合はスキップ（--no-dedup-cveで無効化）
 
 [10] 週次レポート (reports/weekly.py)
     Markdownで週次サマリー＋High個別対策セクションを生成
+    月次・四半期レポートは reports/periodic.py
+    （カテゴリ別トレンド・対応待ちHigh・CVEクラスタ等）
 ```
+
+`python main.py alerts --kev-due-within N` で KEV対応期限切迫アイテムを表示。
+`streamlit run dashboard.py` でWebダッシュボードを起動できる
+（要 `requirements-dashboard.txt` のインストール）。
 
 `python main.py run` で[1]〜[10]を一括実行する。
 

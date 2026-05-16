@@ -50,12 +50,23 @@ python main.py run
 # 統計
 python main.py stats
 
+# KEV対応期限が7日以内のアイテムをアラート表示
+python main.py alerts --kev-due-within 7
+
+# 月次・四半期レポート
+python main.py report --period monthly
+python main.py report --period quarterly
+
 # 人間レビュー記録（status / category / priority / note）
 python main.py review AI-THREAT-0042 \
     --status Reviewing \
     --correct-category "Not AI-related" \
     --priority Low \
     --note "誤検知。実際は IoT 機器の問題で AI 経路なし"
+
+# Webダッシュボード（要 requirements-dashboard.txt）
+pip install -r requirements-dashboard.txt
+streamlit run dashboard.py
 ```
 
 ## 典型的な運用フロー
@@ -218,8 +229,69 @@ python main.py review AI-THREAT-0042 \
 ```
 
 - `status`: New / Reviewing / Actioned / Closed / FalsePositive
-- `corrected_category`: 元の `category` は変えず、別カラムに記録（学習データとして活用予定）
+- `corrected_category`: 元の `category` は変えず、別カラムに記録
 - `reviewer`: 未指定時は `$USER` 環境変数を使用
+
+### Few-shot学習
+
+蓄積された `corrected_category` 修正は、次回以降の Claude 分類の **few-shot examples** として自動注入される（直近5件まで）。レビューを重ねるほど、分類が自社の運用判断に近づく仕組み。
+
+学習対象は `corrected_category != category` のレコードのみ（修正の意図があったもの）。
+
+## CVEクラスタリングと通知の重複排除
+
+同じCVEが複数の情報源（CISA / GitHub Advisory / JVN / IPA等）から個別レコードとして取得される問題に対応:
+
+- **通知時の自動重複排除**: `notify` は同じCVEを既に通知済みの場合スキップ（`--no-dedup-cve` で無効化可能）
+- **月次/四半期レポート**: CVEクラスタを集約表示し、1件のpatchで複数レコードが解決することを可視化
+
+## 月次・四半期レポート
+
+```bash
+python main.py report --period monthly
+python main.py report --period quarterly
+```
+
+出力例の内容:
+- カテゴリ別の **前期間比トレンド**（▲25%、▼10%等）
+- Priority / Impact / Status の分布
+- **対応待ちHighアイテム** (status=New/Reviewing) の明細
+- KEV該当件数 / EPSS≥0.7件数
+- **Top CVE Clusters**（複数ソースから報告されている同一CVE）
+- Policy Implications プレースホルダ（AI Threat Leadが手書きで埋める枠）
+
+## KEV対応期限アラート
+
+CISA KEV（実環境で悪用中CVEリスト）には連邦機関向け対応期限がある。商用環境でも事実上の対応指標として活用:
+
+```bash
+python main.py alerts --kev-due-within 7    # 7日以内
+python main.py alerts --kev-due-within 30   # 30日以内
+```
+
+ランサムウェアキャンペーン関連は `[RANSOMWARE]` で強調表示される。
+
+## 一次情報の本文取得
+
+RSS の `summary` が短い場合（500字未満）、`url` から記事本文を `trafilatura` で抽出し、分類器に渡す要約を拡張する。
+
+- GitHub Advisory / Twitter / YouTube など、本文抽出に不向きなソースは自動スキップ
+- 失敗時は元の summary をそのまま使用（非致命的）
+- `--no-fetch-body` で無効化
+
+## Streamlitダッシュボード
+
+```bash
+pip install -r requirements-dashboard.txt
+streamlit run dashboard.py
+```
+
+ブラウザで以下が確認できる:
+- KPI: 総件数 / High / 自社影響Yes / KEV該当 / 対応待ちHigh
+- 過去30日のPriority別アクティビティ
+- カテゴリ別件数
+- KEV該当アイテム（対応期限カレンダー）
+- Priority / Impact / Status / KEV / 期間でフィルタ可能なテーブル
 
 ## トラブルシューティング
 

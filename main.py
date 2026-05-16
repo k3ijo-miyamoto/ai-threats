@@ -21,9 +21,9 @@ from typing import Any
 import yaml
 
 from classifiers import CVEEnricher, ImpactScorer, MitigationAdvisor, build_classifier
-from collectors import GitHubAdvisoryCollector, RSSCollector, ThreatItem
+from collectors import ArticleFetcher, GitHubAdvisoryCollector, RSSCollector, ThreatItem
 from notifiers import SlackNotifier, TeamsNotifier
-from reports import generate_weekly_report
+from reports import generate_periodic_report, generate_weekly_report
 from storage import ThreatRecord, ThreatRegister
 from storage.db import now_iso
 
@@ -90,11 +90,12 @@ def cmd_collect(args: argparse.Namespace) -> int:
     company_cfg = _load_yaml(CONFIG_DIR / "company_assets.yaml")
 
     register = ThreatRegister(DEFAULT_SQLITE, DEFAULT_CSV)
-    classifier = build_classifier(args.classifier)
+    classifier = build_classifier(args.classifier, sqlite_path=str(DEFAULT_SQLITE))
     scorer = ImpactScorer(company_cfg)
     enricher = CVEEnricher(cache_dir=DATA_DIR / "cache")
+    fetcher = ArticleFetcher() if not args.no_fetch_body else None
 
-    log.info("Classifier: %s", classifier.name)
+    log.info("Classifier: %s; article-fetch: %s", classifier.name, "on" if fetcher else "off")
 
     new_count = 0
     dup_count = 0
@@ -112,6 +113,9 @@ def cmd_collect(args: argparse.Namespace) -> int:
             if register.fingerprint_exists(item.fingerprint):
                 dup_count += 1
                 continue
+            # Attempt to extend the summary by fetching the article body.
+            if fetcher is not None:
+                item.summary = fetcher.enrich_summary(item.url, item.summary)
             try:
                 classification = classifier.classify(item.title, item.summary)
                 enrichment = enricher.enrich({
@@ -186,10 +190,21 @@ def cmd_notify(args: argparse.Namespace) -> int:
         return 0
 
     notified_ids: list[str] = []
+    cve_suppressed_ids: list[str] = []
     teams_ok = teams_fail = slack_ok = slack_fail = 0
 
     for row in rows:
         record = dict(row)
+        # CVE-based deduplication: skip if the same CVE has already been notified.
+        cve_ids = record.get("cve_ids") or ""
+        if cve_ids and not getattr(args, "no_dedup_cve", False):
+            prev = register.cve_already_notified(cve_ids)
+            if prev:
+                cve_suppressed_ids.append(row["threat_id"])
+                # Still mark as notified so we don't retry forever, but don't actually send.
+                notified_ids.append(row["threat_id"])
+                continue
+
         sent = False
         if teams.enabled:
             if teams.notify(record):
@@ -208,7 +223,8 @@ def cmd_notify(args: argparse.Namespace) -> int:
 
     register.mark_notified(notified_ids)
     print(
-        f"notified={len(notified_ids)} / pending={len(rows)} "
+        f"sent={len(notified_ids) - len(cve_suppressed_ids)} "
+        f"cve_dedup_skipped={len(cve_suppressed_ids)} / pending={len(rows)} "
         f"(teams: ok={teams_ok} fail={teams_fail} enabled={teams.enabled}; "
         f"slack: ok={slack_ok} fail={slack_fail} enabled={slack.enabled})"
     )
@@ -256,9 +272,37 @@ def cmd_advise(args: argparse.Namespace) -> int:
 
 def cmd_report(args: argparse.Namespace) -> int:
     register = ThreatRegister(DEFAULT_SQLITE, DEFAULT_CSV)
-    out_path = REPORTS_DIR / "weekly_report.md"
-    path = generate_weekly_report(register, out_path, days=args.days)
+    period = (args.period or "weekly").lower()
+    if period == "weekly":
+        out_path = REPORTS_DIR / "weekly_report.md"
+        path = generate_weekly_report(register, out_path, days=args.days)
+    elif period in ("monthly", "quarterly"):
+        out_path = REPORTS_DIR / f"{period}_report.md"
+        path = generate_periodic_report(register, out_path, period=period)
+    else:
+        print(f"Unknown period: {period}. Use weekly|monthly|quarterly.")
+        return 2
     print(f"report={path}")
+    return 0
+
+
+def cmd_alerts(args: argparse.Namespace) -> int:
+    """Surface CVE/KEV-due-soon items that may slip through normal triage."""
+    register = ThreatRegister(DEFAULT_SQLITE, DEFAULT_CSV)
+    rows = register.kev_due_within(days=args.kev_due_within)
+    if not rows:
+        print(f"No KEV-listed items with due date within {args.kev_due_within} days.")
+        return 0
+
+    print(f"KEV-listed items with due date <= {args.kev_due_within} days:\n")
+    for r in rows:
+        d = dict(r)
+        ransom = " [RANSOMWARE]" if d.get("kev_known_ransomware") else ""
+        print(
+            f"  {d['threat_id']} | due={d['kev_due_date']} | "
+            f"CVE={d.get('cve_ids') or '-'}{ransom} | priority={d['priority']} | "
+            f"status={d['status']} | {d['title'][:60]}"
+        )
     return 0
 
 
@@ -348,21 +392,37 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_collect = sub.add_parser("collect", help="Collect, classify, score, store")
     p_collect.add_argument("--classifier", default=None, help="rule-based|claude (default: env)")
+    p_collect.add_argument("--no-fetch-body", action="store_true", help="Skip article body fetch")
     p_collect.set_defaults(func=cmd_collect)
 
-    p_notify = sub.add_parser("notify", help="Send High priority items to Teams")
+    p_notify = sub.add_parser("notify", help="Send High priority items to Slack / Teams")
+    p_notify.add_argument(
+        "--no-dedup-cve",
+        action="store_true",
+        help="Disable CVE-based deduplication (send even if same CVE was notified before)",
+    )
     p_notify.set_defaults(func=cmd_notify)
 
     p_advise = sub.add_parser("advise", help="Generate tailored mitigations for High items (Claude)")
     p_advise.add_argument("--limit", type=int, default=0, help="Max items (0 = all pending)")
     p_advise.set_defaults(func=cmd_advise)
 
-    p_report = sub.add_parser("report", help="Generate weekly Markdown report")
-    p_report.add_argument("--days", type=int, default=7)
+    p_report = sub.add_parser("report", help="Generate Markdown report (weekly/monthly/quarterly)")
+    p_report.add_argument("--period", choices=["weekly", "monthly", "quarterly"], default="weekly")
+    p_report.add_argument("--days", type=int, default=7, help="Override window (weekly only)")
     p_report.set_defaults(func=cmd_report)
 
     p_stats = sub.add_parser("stats", help="Show register statistics")
     p_stats.set_defaults(func=cmd_stats)
+
+    p_alerts = sub.add_parser("alerts", help="Show KEV due-date alerts and similar urgencies")
+    p_alerts.add_argument(
+        "--kev-due-within",
+        type=int,
+        default=7,
+        help="Days until KEV due date to consider urgent (default: 7)",
+    )
+    p_alerts.set_defaults(func=cmd_alerts)
 
     p_review = sub.add_parser("review", help="Record human review on a threat record")
     p_review.add_argument("threat_id", help="e.g., AI-THREAT-0042")
@@ -375,8 +435,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_run = sub.add_parser("run", help="collect -> advise (if API key) -> notify -> report")
     p_run.add_argument("--classifier", default=None, help="rule-based|claude (default: env)")
+    p_run.add_argument("--period", choices=["weekly", "monthly", "quarterly"], default="weekly")
     p_run.add_argument("--days", type=int, default=7)
     p_run.add_argument("--limit", type=int, default=0, help="Advice limit (0 = all High items)")
+    p_run.add_argument("--no-fetch-body", action="store_true", help="Skip article body fetch")
     p_run.set_defaults(func=cmd_run)
 
     return parser
