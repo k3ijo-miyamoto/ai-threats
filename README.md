@@ -279,6 +279,36 @@ python main.py alerts --kev-due-within 30   # 30日以内
 
 ランサムウェアキャンペーン関連は `[RANSOMWARE]` で強調表示される。
 
+## IOC（Indicators of Compromise）抽出
+
+`collect` は各脅威からIOCを自動抽出して `iocs_json` カラムに保存します:
+
+| 種類 | 例 |
+|---|---|
+| IPv4 | `45.33.32.156`（プライベート/ループバック/ドキュメント用は除外） |
+| ドメイン | `evil-c2.example.test`（github.com 等の周知ドメインは除外） |
+| URL | `https://...` / `hxxps://...` (defang自動正規化) |
+| ハッシュ | SHA256 / SHA1 / MD5 |
+| Bitcoin | レガシーアドレス（1/3始まり） |
+
+Defang表記（`evil[.]com`, `hxxps://`, `1.2.3[.]4`）は自動的に正規形に戻します。
+
+MCPツール `search_iocs` でIOC検索:
+```
+"45.33.32.156 が含まれる脅威レコードを探して"
+```
+
+将来的にSIEM/EDR連携時の照合データとして活用予定。
+
+## テスト
+
+```bash
+pip install -r requirements-dev.txt
+pytest tests/ -v
+```
+
+67テスト用意。GitHub Actions ([.github/workflows/test.yml](.github/workflows/test.yml)) でpush/PR時に Python 3.11/3.12 で自動実行されます。
+
 ## 一次情報の本文取得
 
 RSS の `summary` が短い場合（500字未満）、`url` から記事本文を `trafilatura` で抽出し、分類器に渡す要約を拡張する。

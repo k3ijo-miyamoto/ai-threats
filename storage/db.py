@@ -46,7 +46,8 @@ CREATE TABLE IF NOT EXISTS threat_register (
     reviewed_at      TEXT,
     reviewer         TEXT,
     review_note      TEXT,
-    corrected_category TEXT
+    corrected_category TEXT,
+    iocs_json        TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_threat_collected_at ON threat_register(collected_at);
@@ -88,6 +89,7 @@ class ThreatRecord:
     reviewer: str = ""
     review_note: str = ""
     corrected_category: str = ""
+    iocs_json: str = ""
     extra: dict[str, Any] | None = None
 
     def to_row(self) -> dict[str, Any]:
@@ -137,6 +139,7 @@ class ThreatRegister:
                 ("reviewer",             "ALTER TABLE threat_register ADD COLUMN reviewer TEXT"),
                 ("review_note",          "ALTER TABLE threat_register ADD COLUMN review_note TEXT"),
                 ("corrected_category",   "ALTER TABLE threat_register ADD COLUMN corrected_category TEXT"),
+                ("iocs_json",            "ALTER TABLE threat_register ADD COLUMN iocs_json TEXT"),
             )
             for col, ddl in migrations:
                 if col not in existing:

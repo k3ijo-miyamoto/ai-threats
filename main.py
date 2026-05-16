@@ -20,7 +20,14 @@ from typing import Any
 
 import yaml
 
-from classifiers import CVEEnricher, ImpactScorer, MitigationAdvisor, build_classifier
+from classifiers import (
+    CVEEnricher,
+    ImpactScorer,
+    MitigationAdvisor,
+    build_classifier,
+    extract_iocs,
+    iocs_to_json_string,
+)
 from collectors import ArticleFetcher, GitHubAdvisoryCollector, RSSCollector, ThreatItem
 from notifiers import SlackNotifier, TeamsNotifier
 from reports import generate_periodic_report, generate_weekly_report
@@ -128,6 +135,7 @@ def cmd_collect(args: argparse.Namespace) -> int:
                     "summary": item.summary,
                     "extra": {"source_extra": item.extra},
                 })
+                iocs = extract_iocs(item.title, item.summary)
                 decision = scorer.score(
                     item.title,
                     item.summary,
@@ -167,6 +175,7 @@ def cmd_collect(args: argparse.Namespace) -> int:
                 kev_known_ransomware=enrichment.kev_known_ransomware,
                 epss_max_score=enrichment.epss_max_score,
                 epss_max_cve=enrichment.epss_max_cve,
+                iocs_json=iocs_to_json_string(iocs),
                 extra={"raw_tags": item.raw_tags, "source_extra": item.extra},
             )
             if register.insert(record):

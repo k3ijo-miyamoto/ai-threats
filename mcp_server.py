@@ -262,6 +262,31 @@ def recent_high(days: int = 7, limit: int = 30) -> dict[str, Any]:
 
 
 @mcp.tool()
+def search_iocs(ioc: str, limit: int = 20) -> dict[str, Any]:
+    """Find records whose extracted IOCs include the given value (IP / domain / hash / URL / BTC).
+
+    Matches against the `iocs_json` column populated at collection time.
+
+    Args:
+        ioc: e.g., "192.0.2.10", "evil.com", a SHA256 hex.
+        limit: Max records (default 20).
+    """
+    ioc_lc = ioc.strip().lower()
+    if not ioc_lc:
+        return {"error": "ioc must not be empty"}
+    with _connect() as conn:
+        cur = conn.execute(
+            "SELECT * FROM threat_register "
+            "WHERE iocs_json IS NOT NULL AND iocs_json != '' "
+            "AND LOWER(iocs_json) LIKE ? "
+            "ORDER BY collected_at DESC LIMIT ?",
+            (f"%{ioc_lc}%", limit),
+        )
+        records = [_row_to_dict(r) for r in cur.fetchall()]
+    return {"ioc": ioc, "count": len(records), "records": records}
+
+
+@mcp.tool()
 def stats(days: int = 30) -> dict[str, Any]:
     """Aggregate statistics for the given window.
 
