@@ -40,8 +40,13 @@ log = logging.getLogger("threat_watch")
 
 def _load_yaml(path: Path) -> dict[str, Any]:
     if not path.exists():
-        log.warning("Config not found: %s", path)
-        return {}
+        example = path.with_suffix(".example" + path.suffix)
+        if example.exists():
+            log.warning("Config %s not found, falling back to %s", path.name, example.name)
+            path = example
+        else:
+            log.warning("Config not found: %s", path)
+            return {}
     with path.open("r", encoding="utf-8") as f:
         return yaml.safe_load(f) or {}
 

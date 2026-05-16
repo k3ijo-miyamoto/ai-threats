@@ -27,6 +27,8 @@ source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
 # .env を編集: ANTHROPIC_API_KEY, TEAMS_WEBHOOK_URL, GITHUB_TOKEN, THREAT_WATCH_CLASSIFIER
+cp config/company_assets.example.yaml config/company_assets.yaml
+# config/company_assets.yaml を自社のAI利用状況に合わせて編集
 ```
 
 ## 基本コマンド
@@ -131,7 +133,13 @@ ClaudeClassifierはAPI失敗時、自動的にrule-basedへフォールバック
 
 ### 自社AIツールの追加
 
-[config/company_assets.yaml](config/company_assets.yaml) を編集。例: GitLab Duoを追加する場合:
+まず [config/company_assets.example.yaml](config/company_assets.example.yaml) を `config/company_assets.yaml` にコピーする（実運用ファイルは `.gitignore` 済み）。
+
+```bash
+cp config/company_assets.example.yaml config/company_assets.yaml
+```
+
+そのうえで `config/company_assets.yaml` を編集。例: GitLab Duoを追加する場合:
 
 ```yaml
   - name: GitLab Duo
@@ -295,7 +303,27 @@ claude
 3. 過去7日 vs 過去8-14日のカテゴリ別件数を比較してトレンド検出
 4. **自然言語のブリーフィング** をChatに出力（要対応High / KEV切迫 / トレンド / 推奨アクション）
 
-毎朝この `/daily-report` を打つだけで運用が回ります。完全自動化したい場合は `/schedule` で毎朝この skill を呼ぶ routine を作成できます。
+毎朝この `/daily-report` を打つだけで運用が回ります。
+
+### cronで完全自動化
+
+[scripts/daily_report_cron.sh](scripts/daily_report_cron.sh) は cron 環境（PATH最小、NVM/venv非継承）でも動くよう作られたラッパースクリプト:
+
+```bash
+# crontab -e で追加
+0 8 * * * /home/hacker/Project/threat_watch/scripts/daily_report_cron.sh >> /home/hacker/Project/threat_watch/logs/cron.log 2>&1
+```
+
+スクリプトが行うこと:
+1. NVM をロード（Claude CLI が要求するNode を有効化）
+2. プロジェクトの `.venv` を activate
+3. `claude --print --max-budget-usd 2 /daily-report` を実行
+4. `logs/daily-report-YYYY-MM-DD.md` に出力を保存
+5. `SLACK_WEBHOOK_URL` が設定されていればSlackへ投稿
+
+API予算上限は `--max-budget-usd 2` でデフォルト$2にキャップ（実際は$0.05〜0.20程度）。
+
+`SLACK_WEBHOOK_URL` を `.env` ではなく cron 用の環境ファイルに置きたい場合、crontab で `BASH_ENV=/path/to/env.sh` を指定するか、スクリプト冒頭で `source` してください。
 
 ## MCP統合（Claude CLI から自然言語で操作）
 

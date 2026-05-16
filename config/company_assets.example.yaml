@@ -1,0 +1,113 @@
+# 自社で利用しているAI関連サービス・ツール
+# keywords: 脅威情報のtitle/summaryと照合する際のマッチング語
+# risk_level: 該当があった場合の基準リスクレベル
+
+company_ai_assets:
+  - name: Microsoft 365 Copilot
+    category: enterprise_ai
+    keywords:
+      - copilot
+      - microsoft 365
+      - m365
+      - office 365
+      - sharepoint
+      - teams
+      - outlook
+    data_access:
+      - email
+      - teams
+      - sharepoint
+      - office_documents
+    risk_level: high
+    owner: IT
+
+  - name: GitHub Copilot Business
+    category: coding_ai
+    keywords:
+      - github copilot
+      - copilot
+      - github advanced security
+      - github actions
+    data_access:
+      - source_code
+      - repositories
+    risk_level: high
+    owner: Engineering
+
+  - name: ChatGPT Enterprise
+    category: general_ai
+    keywords:
+      - chatgpt
+      - openai
+      - gpt-4
+      - gpt-5
+      - assistants api
+    data_access:
+      - internal_documents
+      - business_documents
+    risk_level: medium
+    owner: AI Team
+
+  - name: Claude / Anthropic
+    category: general_ai
+    keywords:
+      - claude
+      - anthropic
+      - claude code
+      - claude api
+    data_access:
+      - internal_documents
+      - source_code
+    risk_level: medium
+    owner: AI Team
+
+  - name: MCP Servers
+    category: agent_tools
+    keywords:
+      - mcp
+      - model context protocol
+      - mcp server
+      - tool poisoning
+    data_access:
+      - local_files
+      - internal_api
+      - tool_execution
+    risk_level: high
+    owner: AI Team
+
+  - name: RAG Knowledge Base
+    category: rag
+    keywords:
+      - rag
+      - retrieval augmented
+      - vector db
+      - vector database
+      - embedding
+      - pinecone
+      - chroma
+      - weaviate
+    data_access:
+      - internal_documents
+      - knowledge_base
+      - vector_db
+    risk_level: medium
+    owner: AI Team
+
+# High-risk AIカテゴリ（company_impact=Unknownでも即時通知対象）
+high_risk_categories:
+  - Prompt Injection
+  - Tool Poisoning / MCP Risk
+  - Agent Excessive Agency
+  - AI Supply Chain
+
+# 即時通知トリガーキーワード
+critical_keywords:
+  - rce
+  - remote code execution
+  - credential theft
+  - credential leak
+  - token leak
+  - active exploitation
+  - exploited in the wild
+  - zero-day
+  - 0-day

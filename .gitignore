@@ -10,7 +10,9 @@ data/*.sqlite
 data/*.csv
 data/*.json
 data/cache/
+config/company_assets.yaml
 .claude/settings.local.json
+logs/
 reports/*.md
 !reports/.gitkeep
 .DS_Store
