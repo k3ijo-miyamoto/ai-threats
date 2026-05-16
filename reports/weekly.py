@@ -114,6 +114,37 @@ def generate_weekly_report(
         lines.append("")
 
     render_table("High Priority Items", high_rows)
+
+    # Per-item tailored mitigations (only for High items that have one).
+    high_with_advice = [r for r in high_rows if (r.get("tailored_action") or "").strip()]
+    if high_with_advice:
+        lines.append(f"## High Priority — Tailored Mitigations ({len(high_with_advice)})")
+        lines.append("")
+        lines.append("_Per-item mitigation advice generated for each High-priority threat. "
+                     "Treat as starting point; final actions require human judgement._")
+        lines.append("")
+        for it in high_with_advice:
+            tid = _esc(it.get("threat_id"))
+            sev = _esc(it.get("severity"))
+            cat = _esc(it.get("category"))
+            title = _esc(it.get("title"))
+            url = it.get("url") or ""
+            asset = _esc(it.get("affected_asset")) or "(none)"
+            impact = _esc(it.get("company_impact"))
+            advice = (it.get("tailored_action") or "").strip()
+
+            lines.append(f"### {tid} — {title}")
+            lines.append("")
+            lines.append(f"- **Severity / Category**: {sev} · {cat}")
+            lines.append(f"- **Company Impact / Asset**: {impact} · {asset}")
+            if url:
+                lines.append(f"- **Source**: <{url}>")
+            lines.append("")
+            lines.append("**Recommended actions:**")
+            lines.append("")
+            lines.append(advice)
+            lines.append("")
+
     render_table("Company Impact = Unknown (needs triage)", unknown_rows)
     render_table("Medium Priority Items", medium_rows)
 

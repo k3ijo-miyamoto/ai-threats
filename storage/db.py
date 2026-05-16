@@ -35,7 +35,8 @@ CREATE TABLE IF NOT EXISTS threat_register (
     is_ai_related    INTEGER,
     status           TEXT NOT NULL DEFAULT 'New',
     notified         INTEGER NOT NULL DEFAULT 0,
-    extra_json       TEXT
+    extra_json       TEXT,
+    tailored_action  TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_threat_collected_at ON threat_register(collected_at);
@@ -66,6 +67,7 @@ class ThreatRecord:
     is_ai_related: bool
     status: str = "New"
     notified: bool = False
+    tailored_action: str = ""
     extra: dict[str, Any] | None = None
 
     def to_row(self) -> dict[str, Any]:
@@ -97,6 +99,11 @@ class ThreatRegister:
     def _init_schema(self) -> None:
         with self._connect() as conn:
             conn.executescript(_SCHEMA)
+            # Lightweight migrations for older DBs: add columns introduced later.
+            existing = {row["name"] for row in conn.execute("PRAGMA table_info(threat_register)")}
+            for col, ddl in (("tailored_action", "ALTER TABLE threat_register ADD COLUMN tailored_action TEXT"),):
+                if col not in existing:
+                    conn.execute(ddl)
             conn.commit()
 
     @contextmanager

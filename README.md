@@ -41,7 +41,10 @@ python main.py notify
 # 週次レポート生成 (reports/weekly_report.md)
 python main.py report --days 7
 
-# 一括実行（collect → notify → report）— 通常はこれを使う
+# High優先度の各脅威に対し、Claudeで個別の対策を生成
+python main.py advise [--limit N]
+
+# 一括実行（collect → advise → notify → report）— 通常はこれを使う
 python main.py run
 
 # 統計
@@ -61,8 +64,9 @@ python main.py run
 1. 8つの情報源からRSS/APIを取得
 2. 新規分のみ分類器で分類（既存はfingerprintで重複排除）
 3. `company_assets.yaml` と照合して影響判定
-4. High優先度を Teams へ通知
-5. 週次レポートを更新
+4. High優先度の各脅威に対し、Claudeで個別の対策（tailored_action）を生成
+5. High優先度を Slack / Teams へ通知
+6. 週次レポートを更新
 
 ### 週次レビュー（人間が手動で）
 

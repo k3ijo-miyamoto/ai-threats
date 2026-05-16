@@ -20,7 +20,7 @@ from typing import Any
 
 import yaml
 
-from classifiers import ImpactScorer, build_classifier
+from classifiers import ImpactScorer, MitigationAdvisor, build_classifier
 from collectors import GitHubAdvisoryCollector, RSSCollector, ThreatItem
 from notifiers import SlackNotifier, TeamsNotifier
 from reports import generate_weekly_report
@@ -201,6 +201,45 @@ def cmd_notify(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_advise(args: argparse.Namespace) -> int:
+    """Generate tailored mitigation actions for High-priority items via Claude."""
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        print("ANTHROPIC_API_KEY not set; cannot generate advice. Aborting.")
+        return 2
+
+    company_cfg = _load_yaml(CONFIG_DIR / "company_assets.yaml")
+    register = ThreatRegister(DEFAULT_SQLITE, DEFAULT_CSV)
+    advisor = MitigationAdvisor(company_assets=company_cfg.get("company_ai_assets") or [])
+
+    import sqlite3
+    with sqlite3.connect(DEFAULT_SQLITE) as conn:
+        conn.row_factory = sqlite3.Row
+        cur = conn.execute(
+            "SELECT * FROM threat_register "
+            "WHERE priority = 'High' AND (tailored_action IS NULL OR tailored_action = '') "
+            "ORDER BY collected_at DESC"
+        )
+        rows = list(cur.fetchall())
+        if args.limit:
+            rows = rows[: args.limit]
+
+        log.info("Generating tailored actions for %d items", len(rows))
+        generated = 0
+        for row in rows:
+            advice = advisor.advise(dict(row))
+            conn.execute(
+                "UPDATE threat_register SET tailored_action = ? WHERE threat_id = ?",
+                (advice, row["threat_id"]),
+            )
+            generated += 1
+            log.info("  %s: %d chars", row["threat_id"], len(advice))
+        conn.commit()
+
+    register.export_csv()
+    print(f"advised={generated} (priority=High, missing tailored_action)")
+    return 0
+
+
 def cmd_report(args: argparse.Namespace) -> int:
     register = ThreatRegister(DEFAULT_SQLITE, DEFAULT_CSV)
     out_path = REPORTS_DIR / "weekly_report.md"
@@ -226,6 +265,9 @@ def cmd_run(args: argparse.Namespace) -> int:
     rc = cmd_collect(args)
     if rc != 0:
         return rc
+    # Generate tailored advice before notify so Teams/Slack/report all see it.
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        cmd_advise(args)
     rc = cmd_notify(args)
     if rc != 0:
         return rc
@@ -248,6 +290,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_notify = sub.add_parser("notify", help="Send High priority items to Teams")
     p_notify.set_defaults(func=cmd_notify)
 
+    p_advise = sub.add_parser("advise", help="Generate tailored mitigations for High items (Claude)")
+    p_advise.add_argument("--limit", type=int, default=0, help="Max items (0 = all pending)")
+    p_advise.set_defaults(func=cmd_advise)
+
     p_report = sub.add_parser("report", help="Generate weekly Markdown report")
     p_report.add_argument("--days", type=int, default=7)
     p_report.set_defaults(func=cmd_report)
@@ -255,9 +301,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_stats = sub.add_parser("stats", help="Show register statistics")
     p_stats.set_defaults(func=cmd_stats)
 
-    p_run = sub.add_parser("run", help="collect -> notify -> report")
+    p_run = sub.add_parser("run", help="collect -> advise (if API key) -> notify -> report")
     p_run.add_argument("--classifier", default=None, help="rule-based|claude (default: env)")
     p_run.add_argument("--days", type=int, default=7)
+    p_run.add_argument("--limit", type=int, default=0, help="Advice limit (0 = all High items)")
     p_run.set_defaults(func=cmd_run)
 
     return parser
