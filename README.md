@@ -279,6 +279,24 @@ RSS の `summary` が短い場合（500字未満）、`url` から記事本文�
 - 失敗時は元の summary をそのまま使用（非致命的）
 - `--no-fetch-body` で無効化
 
+## Daily Report Skill（Claude CLI コマンド）
+
+[.claude/skills/daily-report/SKILL.md](.claude/skills/daily-report/SKILL.md) は、Claude CLI で `/daily-report` と入力すると毎日のブリーフィングを生成します。
+
+```bash
+cd /home/hacker/Project/threat_watch
+claude
+> /daily-report
+```
+
+裏で以下を実行:
+1. `python main.py run` で収集・分類・通知・週次レポート更新
+2. MCPツール (`stats`, `recent_high`, `list_kev_due` 等) で文脈を取得
+3. 過去7日 vs 過去8-14日のカテゴリ別件数を比較してトレンド検出
+4. **自然言語のブリーフィング** をChatに出力（要対応High / KEV切迫 / トレンド / 推奨アクション）
+
+毎朝この `/daily-report` を打つだけで運用が回ります。完全自動化したい場合は `/schedule` で毎朝この skill を呼ぶ routine を作成できます。
+
 ## MCP統合（Claude CLI から自然言語で操作）
 
 [mcp_server.py](mcp_server.py) はThreat Register をModel Context Protocol で公開します。Claude CLI / Claude Desktop / Cursor 等から自然言語クエリ・対応記録ができます。
