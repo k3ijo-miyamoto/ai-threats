@@ -42,7 +42,7 @@ From `stats(days=1)`:
 
 ## Step 4 — Produce the report
 
-Output **directly in chat** (do not write to a file unless the user asks).
+Output **directly in chat** AND persist to `reports/daily/YYYY-MM-DD.md` using the same content (see Step 5).
 Use Japanese for the narrative, English for technical identifiers (CVE, threat_id, category names).
 Be concrete. If a section has no items, say so in one short line instead of padding.
 
@@ -82,6 +82,18 @@ Format:
 ```
 
 Close with one sentence — an executive-level takeaway about today's posture (e.g., "Quiet day; only KEV catch-up needed." or "Prompt Injection surge — investigate agent frameworks in use.").
+
+## Step 5 — Persist the report to file
+
+After printing the report in chat, write the **exact same content** to:
+
+```
+reports/daily/YYYY-MM-DD.md
+```
+
+(Use today's UTC date for `YYYY-MM-DD`.) Use the Write tool. Overwrite if the file already exists — the latest run for a given day is authoritative. The directory `reports/daily/` already exists; do not create it again.
+
+The file body should start with the same `🌅 AI Threat Watch — Daily Report (YYYY-MM-DD)` heading line that appears in chat, so the file is self-contained and can be browsed standalone later.
 
 ## Style guardrails
 

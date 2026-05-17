@@ -14,6 +14,8 @@ config/company_assets.yaml
 .claude/settings.local.json
 logs/
 reports/*.md
+reports/daily/*.md
 !reports/.gitkeep
+!reports/daily/.gitkeep
 .DS_Store
 *.log
