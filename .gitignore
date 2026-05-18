@@ -19,3 +19,4 @@ reports/daily/*.md
 !reports/daily/.gitkeep
 .DS_Store
 *.log
+.sovereign/

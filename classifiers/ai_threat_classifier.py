@@ -358,6 +358,103 @@ class ClaudeClassifier(Classifier):
         )
 
 
+# --------------------------------------------------------------------------- #
+# Sovereign (local LLM via sovereign-agent CLI) classifier
+# --------------------------------------------------------------------------- #
+
+
+_DEFAULT_SOVEREIGN_BIN = os.path.expanduser(
+    "~/Project/sovereign-agent/rust/target/debug/sovereign"
+)
+_DEFAULT_SOVEREIGN_MODEL = "gemma3:12b"
+_SOVEREIGN_TIMEOUT_SEC = 120
+
+
+class SovereignClassifier(Classifier):
+    """Classify via sovereign-agent CLI (local Ollama-backed LLM).
+
+    Skeleton implementation: shells out to the `sovereign` binary in --plain-output
+    mode, embeds the classification system prompt into the user message, and parses
+    JSON from stdout. Falls back to rule-based on any failure (parse error, timeout,
+    binary missing, etc.).
+    """
+
+    name = "sovereign"
+
+    def __init__(
+        self,
+        binary: str | None = None,
+        model: str | None = None,
+        timeout_sec: int = _SOVEREIGN_TIMEOUT_SEC,
+        few_shot_examples: list[dict[str, str]] | None = None,
+    ) -> None:
+        self._binary = binary or os.environ.get("SOVEREIGN_BIN") or _DEFAULT_SOVEREIGN_BIN
+        self._model = model or os.environ.get("SOVEREIGN_MODEL") or _DEFAULT_SOVEREIGN_MODEL
+        self._timeout = timeout_sec
+        self._fallback = RuleBasedClassifier()
+        self._system_prompt = _CLAUDE_SYSTEM_PROMPT + _format_few_shot_block(few_shot_examples or [])
+        if few_shot_examples:
+            log.info("SovereignClassifier loaded with %d few-shot examples", len(few_shot_examples))
+
+    def classify(self, title: str, body: str) -> AIClassification:
+        import subprocess
+
+        user_msg = f"Title: {title}\n\nContent:\n{body[:6000]}"
+        full_prompt = f"{self._system_prompt}\n\n---\n\n{user_msg}"
+        try:
+            result = subprocess.run(
+                [
+                    self._binary,
+                    "--plain-output",
+                    "--model", self._model,
+                    "--allowed-tools", "",
+                    "prompt", full_prompt,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=self._timeout,
+                check=False,
+            )
+            if result.returncode != 0:
+                log.warning(
+                    "Sovereign classifier non-zero exit (%s): %s",
+                    result.returncode,
+                    result.stderr[:300],
+                )
+                return self._fallback.classify(title, body)
+            data = _parse_json_block(result.stdout)
+            if not data:
+                log.warning("Sovereign classifier produced no JSON; falling back")
+                return self._fallback.classify(title, body)
+        except FileNotFoundError:
+            log.warning("Sovereign binary not found at %s; using rule-based", self._binary)
+            return self._fallback.classify(title, body)
+        except subprocess.TimeoutExpired:
+            log.warning("Sovereign classifier timed out after %ds; falling back", self._timeout)
+            return self._fallback.classify(title, body)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("Sovereign classification failed, falling back: %s", exc)
+            return self._fallback.classify(title, body)
+
+        category = data.get("category", "Other Security")
+        if category not in AI_THREAT_CATEGORIES:
+            category = "Other Security"
+        severity = data.get("severity", "Low")
+        if severity not in SEVERITIES:
+            severity = "Low"
+        summary = str(data.get("summary") or "")[:400]
+        is_ai = bool(data.get("is_ai_related", category not in ("Other Security", "Not AI-related")))
+
+        return AIClassification(
+            category=category,
+            severity=severity,
+            summary=summary,
+            is_ai_related=is_ai,
+            classifier_used=self.name,
+            raw=data,
+        )
+
+
 _JSON_OBJ_RE = re.compile(r"\{.*\}", re.DOTALL)
 
 
@@ -396,5 +493,12 @@ def build_classifier(mode: str | None = None, sqlite_path: str | None = None) ->
             return ClaudeClassifier(few_shot_examples=examples)
         except Exception as exc:  # noqa: BLE001
             log.warning("Failed to init Claude classifier (%s); using rule-based", exc)
+            return RuleBasedClassifier()
+    if chosen in ("sovereign", "local"):
+        try:
+            examples = load_few_shot_examples(sqlite_path=sqlite_path, limit=5)
+            return SovereignClassifier(few_shot_examples=examples)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("Failed to init Sovereign classifier (%s); using rule-based", exc)
             return RuleBasedClassifier()
     return RuleBasedClassifier()
