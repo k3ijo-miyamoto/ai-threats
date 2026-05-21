@@ -11,6 +11,7 @@ data/*.csv
 data/*.json
 data/cache/
 config/company_assets.yaml
+docs/share-*.md
 .claude/settings.local.json
 logs/
 reports/*.md
