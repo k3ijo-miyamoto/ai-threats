@@ -28,6 +28,13 @@ company_ai_assets:
       - copilot
       - github advanced security
       - github actions
+      - vscode
+      - vs code
+      - vs-code
+      - visual studio code
+      - vscode extension
+      - vscode marketplace
+      - open vsx
     data_access:
       - source_code
       - repositories
