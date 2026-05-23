@@ -5,6 +5,26 @@ description: AI Threat Watch の毎日のサマリーを生成。新規収集を
 
 You are generating the daily AI Threat Watch briefing. Follow these steps in order.
 
+## Step 0 — Self-diagnostic (cron health check)
+
+Before running the pipeline, verify the daily ingestion has not silently stopped. Run this Bash one-liner:
+
+```bash
+y=$(date -u -d "yesterday" +%Y-%m-%d); d2=$(date -u -d "2 days ago" +%Y-%m-%d); \
+  f1=$( [ -f "reports/daily/${y}.md" ] && echo 1 || echo 0 ); \
+  f2=$( [ -f "reports/daily/${d2}.md" ] && echo 1 || echo 0 ); \
+  echo "health: yesterday=${f1} day_before=${f2}"
+```
+
+Interpret the result:
+
+- `yesterday=1 day_before=1` → healthy. Suppress the health banner in Step 4.
+- `yesterday=0` (one or both 0) → degraded. The previous cron tick did not produce a report — either cron stopped, the wrapper script failed, or the host was off. Record this and surface a banner.
+
+If degraded, **also** check whether collection itself stalled by inspecting `stats(days=3)` later in Step 2: if `total < 5` for a 3-day window, treat the pipeline as silent (vs. just the report file missing) and say so explicitly.
+
+Carry the health verdict into Step 4 — do not skip it just because today's run will succeed.
+
 ## Step 1 — Run the collection pipeline
 
 Execute the daily ingestion via Bash:
