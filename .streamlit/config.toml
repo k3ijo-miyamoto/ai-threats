@@ -1,0 +1,15 @@
+# Streamlit server defaults for AI Threat Watch dashboard.
+#
+# The dashboard exposes the entire Threat Register and the contents of
+# company_assets.yaml, neither of which should be reachable from anyone
+# on the LAN. Bind to loopback so `streamlit run dashboard.py` cannot
+# accidentally serve to 0.0.0.0. Override on the command line
+# (`--server.address 0.0.0.0`) only after fronting with auth + TLS.
+
+[server]
+address = "127.0.0.1"
+port = 8501
+headless = true
+
+[browser]
+gatherUsageStats = false
