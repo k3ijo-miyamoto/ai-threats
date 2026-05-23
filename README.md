@@ -28,9 +28,16 @@ threat_watch/
 ## セットアップ
 
 ```bash
-python3 -m venv .venv
+# uv 推奨
+uv venv
 source .venv/bin/activate
-pip install -r requirements.txt
+uv pip install -r requirements.txt
+
+# pip でも可
+# python3 -m venv .venv
+# source .venv/bin/activate
+# pip install -r requirements.txt
+
 cp .env.example .env
 # .env を編集: ANTHROPIC_API_KEY, TEAMS_WEBHOOK_URL, GITHUB_TOKEN, THREAT_WATCH_CLASSIFIER
 cp config/company_assets.example.yaml config/company_assets.yaml
@@ -73,7 +80,7 @@ python main.py review AI-THREAT-0042 \
     --note "誤検知。実際は IoT 機器の問題で AI 経路なし"
 
 # Webダッシュボード（要 requirements-dashboard.txt）
-pip install -r requirements-dashboard.txt
+uv pip install -r requirements-dashboard.txt  # or: pip install -r requirements-dashboard.txt
 streamlit run dashboard.py
 ```
 
@@ -309,7 +316,7 @@ MCPツール `search_iocs` でIOC検索:
 ## テスト
 
 ```bash
-pip install -r requirements-dev.txt
+uv pip install -r requirements-dev.txt  # or: pip install -r requirements-dev.txt
 pytest tests/ -v
 ```
 
@@ -429,7 +436,7 @@ KEVで期限が3日以内に切れるアイテムを教えて
 ## Streamlitダッシュボード
 
 ```bash
-pip install -r requirements-dashboard.txt
+uv pip install -r requirements-dashboard.txt  # or: pip install -r requirements-dashboard.txt
 streamlit run dashboard.py
 ```
 
