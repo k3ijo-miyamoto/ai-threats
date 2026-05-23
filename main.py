@@ -136,9 +136,16 @@ def cmd_collect(args: argparse.Namespace) -> int:
                     "extra": {"source_extra": item.extra},
                 })
                 iocs = extract_iocs(item.title, item.summary)
+                # Match assets/keywords against the classifier's curated summary
+                # (or the truncated original if no classifier summary). Matching
+                # against the full fetched article body produces false positives
+                # — e.g., a GitHub Advisory page that incidentally mentions
+                # "Copilot" in unrelated context would otherwise be tagged as
+                # affecting GitHub Copilot Business.
+                matching_text = classification.summary or item.summary[:400]
                 decision = scorer.score(
                     item.title,
-                    item.summary,
+                    matching_text,
                     classification.category,
                     classification.severity,
                     is_ai_related=classification.is_ai_related,

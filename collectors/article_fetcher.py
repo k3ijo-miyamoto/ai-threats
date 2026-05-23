@@ -49,6 +49,13 @@ class ArticleFetcher:
             return False
         if len(current_summary or "") >= self.min_summary_length:
             return False
+        # URLs pointing to a section anchor of a larger digest page (e.g.
+        # JPCERT Weekly Report wr260520.html#3) all resolve to the same HTML,
+        # so trafilatura returns the entire bulletin for each sub-item. That
+        # cross-contaminates per-item summaries (every PostgreSQL/MongoDB/etc.
+        # entry ends up describing all the other products too). Skip.
+        if "#" in url:
+            return False
         # Skip API endpoints (already structured), Twitter/X links, video sites, etc.
         lowered = url.lower()
         skip_hosts = (
