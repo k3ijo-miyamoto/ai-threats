@@ -7,12 +7,58 @@ Failures are non-fatal — the original summary is preserved.
 
 from __future__ import annotations
 
+import ipaddress
 import logging
+import socket
 from typing import Any
+from urllib.parse import urlparse
 
 import requests
 
 log = logging.getLogger(__name__)
+
+_ALLOWED_SCHEMES = frozenset({"http", "https"})
+
+
+def _is_safe_url(url: str) -> bool:
+    """Block SSRF: scheme allowlist + reject any address that resolves to a
+    private / loopback / link-local / metadata range.
+
+    A compromised or attacker-controlled RSS feed could otherwise drive
+    `requests.get` against http://169.254.169.254/, http://127.0.0.1:8501/
+    (our own dashboard), or RFC1918 hosts on the operator's LAN. Trafilatura
+    would then read the response and feed it into the classifier prompt.
+    """
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return False
+    if parsed.scheme.lower() not in _ALLOWED_SCHEMES:
+        return False
+    host = parsed.hostname
+    if not host:
+        return False
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except OSError:
+        return False
+    for info in infos:
+        sockaddr = info[4]
+        ip_str = sockaddr[0]
+        try:
+            addr = ipaddress.ip_address(ip_str)
+        except ValueError:
+            return False
+        if (
+            addr.is_private
+            or addr.is_loopback
+            or addr.is_link_local
+            or addr.is_multicast
+            or addr.is_reserved
+            or addr.is_unspecified
+        ):
+            return False
+    return True
 
 
 class ArticleFetcher:
@@ -71,13 +117,33 @@ class ArticleFetcher:
             return ""
         if url in self._cache:
             return self._cache[url]
+        if not _is_safe_url(url):
+            log.info("article fetch refused (unsafe URL): %s", url)
+            self._cache[url] = ""
+            return ""
         try:
+            # allow_redirects=False so a feed-supplied URL cannot redirect us
+            # to an internal address after the pre-flight check passed. Follow
+            # one redirect manually after re-validating the target.
             resp = requests.get(
                 url,
                 headers={"User-Agent": self.USER_AGENT, "Accept": "text/html,*/*;q=0.8"},
                 timeout=self.REQUEST_TIMEOUT,
-                allow_redirects=True,
+                allow_redirects=False,
             )
+            if resp.is_redirect or resp.is_permanent_redirect:
+                target = resp.headers.get("Location", "")
+                if target and _is_safe_url(target):
+                    resp = requests.get(
+                        target,
+                        headers={"User-Agent": self.USER_AGENT, "Accept": "text/html,*/*;q=0.8"},
+                        timeout=self.REQUEST_TIMEOUT,
+                        allow_redirects=False,
+                    )
+                else:
+                    log.info("article fetch refused (unsafe redirect): %s -> %s", url, target)
+                    self._cache[url] = ""
+                    return ""
             resp.raise_for_status()
             body = self._extract(resp.text, url) or ""
         except requests.RequestException as exc:
