@@ -295,7 +295,25 @@ class ThreatRegister:
             writer = csv.DictWriter(f, fieldnames=CSV_FIELDS)
             writer.writeheader()
             for r in rows:
-                writer.writerow({k: r[k] for k in CSV_FIELDS})
+                writer.writerow({k: _csv_safe(r[k]) for k in CSV_FIELDS})
+
+
+_CSV_FORMULA_PREFIX = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _csv_safe(value: Any) -> Any:
+    """Neutralise CSV formula injection.
+
+    Spreadsheet apps (Excel, Sheets, LibreOffice) interpret cells starting
+    with =, +, -, @ as formulas. An attacker who controls an advisory title
+    (e.g., `=cmd|'/c calc'!A0`) can land code execution / DDE / external
+    fetch when an operator opens threat_register.csv. Prefix a single quote
+    to anything that starts with one of those characters so the value is
+    rendered as literal text.
+    """
+    if isinstance(value, str) and value.startswith(_CSV_FORMULA_PREFIX):
+        return "'" + value
+    return value
 
     def stats(self) -> dict[str, Any]:
         with self._connect() as conn:
