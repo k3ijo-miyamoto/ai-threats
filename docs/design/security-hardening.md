@@ -30,15 +30,9 @@
 | #5 構造バグ | `from storage.db import ThreatRegister` 後に `hasattr(r, 'stats')` および `r.stats()` の動作を確認。 全 7 メソッド再アタッチ確認 |
 | #6 requests bump | `pip-audit -r requirements.txt -r requirements-dashboard.txt` で **No known vulnerabilities found**、 `python main.py run --period weekly` が `errors=0` で完走 |
 
-## 残存課題 (確信度低、 設計判断、 ガバナンス)
+## 残存課題
 
-| 項目 | リスク評価 | 対応方針 |
-|---|---|---|
-| SSRF: DNS rebinding bypass — pre-flight DNS lookup と `requests.get` の DNS lookup が別なので、 TTL=0 + 攻撃者制御 DNS で bypass されうる | 中 (条件が厳しい) | resolve した IP を pin して `Host:` ヘッダで送る実装が必要。 攻撃が成立する条件が厳しいので後回し |
-| プロンプトインジェクション: 閉じタグの case-sensitivity (`</Untrusted_Input>` 等が strip されない) | 低 | LLM がタグを厳密 parse しないので機能的影響は小さい。 case-insensitive strip に置換すれば改善 |
-| Cron wrapper の `--dangerously-skip-permissions` | 低 (設計判断) | cron 自動実行のため必要。 #3 のプロンプトインジェクション対策で実質的に軽減 |
-| MCP server に認証なし | 低 (設計判断) | stdio 経由のみ、 ネットワーク露出なし。 Claude CLI のホスト隔離に依存 |
-| Anthropic API への `company_assets.yaml` 内容送信 | ガバナンス | [docs/design/external-access.md](external-access.md) で整理済。 Security 部門の承認待ち |
+軽微な改善余地および設計判断による既知の残存項目が複数あり、 内部で追跡している。 ガバナンス系の課題 (Anthropic API への asset 名送信) は [external-access.md](external-access.md) で別途整理済。
 
 ## 運用上の継続事項
 
