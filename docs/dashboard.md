@@ -1,6 +1,6 @@
 # AI Threat Watch — Dashboard
 
-_Generated: 2026-05-25T03:20:03+00:00 · データソース: `data/threat_register.sqlite`_
+_Generated: 2026-05-25T22:37:58+00:00 · データソース: `data/threat_register.sqlite`_
 
 GitHub 上で Mermaid 図はそのままレンダリングされます。再生成は `python main.py dashboard`。
 
@@ -14,7 +14,7 @@ High に残るのは Triage 対象として in-scope と判定されたアイテ
 
 ```mermaid
 flowchart LR
-    A["Collected<br/>396"] --> B["Triage対象<br/>82"]
+    A["Collected<br/>402"] --> B["Triage対象<br/>82"]
     B --> C["High Priority<br/>72"]
     C --> D["通知済<br/>72"]
     D --> E["Actioned / Closed<br/>5"]
@@ -37,8 +37,8 @@ Triage 対象 (in-scope) と判定された AI 関連シグナル件数の週次
 xychart-beta
     title "AI関連シグナル — 週次推移 (last 8 weeks)"
     x-axis ["-7w", "-6w", "-5w", "-4w", "-3w", "-2w", "-1w", "今週"]
-    y-axis "件数" 0 --> 48
-    bar [0, 0, 0, 0, 0, 0, 36, 46]
+    y-axis "件数" 0 --> 44
+    bar [0, 0, 0, 0, 0, 0, 42, 40]
 ```
 
 ### 直近 8 週のカテゴリ内訳 (Top 5)
