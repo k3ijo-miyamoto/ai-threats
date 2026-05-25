@@ -66,42 +66,82 @@ Output **directly in chat** AND persist to `reports/daily/YYYY-MM-DD.md` using t
 Use Japanese for the narrative, English for technical identifiers (CVE, threat_id, category names).
 Be concrete. If a section has no items, say so in one short line instead of padding.
 
+Use a dashboard-style layout: TL;DR quote at the top, scannable stats table, then section headers (##) for each block. This renders cleanly on GitHub web and in IDEs (markdown tables, blockquotes), and degrades acceptably in Slack (where tables become plain text but the structure still reads).
+
 Format:
 
 ```
 🌅 AI Threat Watch — Daily Report (YYYY-MM-DD)
 
-📊 直近24時間: <total>件 (High: X, Medium: Y, Low: Z)
-   うちAI関連: N件 / 非AI関連: M件
-   (収集パイプライン: new=<n> duplicate=<m> errors=<e>)
+> **TL;DR**: <1 sentence — the single thing the reader should walk away knowing>
 
-🚨 要対応 (本日トリアージすべき High):
-  • AI-THREAT-NNNN [<severity>, <category>]
-    "<title 1行要約>"
-    → <一文の具体的な初動アクション>
-  ...
+| 📊 | 24h | 7d | trend |
+|---|---:|---:|:---:|
+| Total | <n> | <n> | <↑ ↓ → > |
+| High | <n> | <n> | <↑ ↓ → > |
+| AI関連 | <n> | <n> | <↑ ↓ → > |
+| KEV 期限切迫 | <n> | - | <⚠ if any overdue, else →> |
 
-⚠️ KEV期限切迫 (within 7 days, 期限超過含む):
-  • AI-THREAT-NNNN | due=YYYY-MM-DD (XX days) | CVE-XXXX
-    <短いタイトル> [RANSOMWARE フラグ付きなら明示]
-  ...
+Pipeline: `new=<n> dup=<m> errors=<e>` · advised=<n> · 通知=<n>
 
-📈 トレンド (this_week vs previous_week):
-  • <Category>: this_week=X, previous=Y (▲ZX%)
-  ...
-  なし → "目立った変化なし" と1行
+---
 
-✅ 昨日対応済み:
-  • AI-THREAT-NNNN: <status> — <note の最初の1行があれば>
-  なし → "新たな対応記録なし"
+## 🔴 要対応 (本日トリアージすべき High)
 
-📝 本日の推奨アクション (重要度順):
-  1. <最も急ぐべきこと、threat_idを必ず引用>
-  2. <次>
-  3. <次>
+_本日の新規 High がゼロなら "本日の新規 High はゼロ" と 1 行で。 1 件以上なら下記表。_
+
+| ID | severity | category | title | 初動 |
+|---|---|---|---|---|
+| AI-THREAT-NNNN | Critical | Tool Poisoning / MCP Risk | <短いtitle> | <一文> |
+
+---
+
+## 🟡 KEV 期限切迫 (within 7 days, 期限超過含む — <N> 件)
+
+| ID | due | days | CVE | status | 備考 |
+|---|---|---:|---|---|---|
+| AI-THREAT-NNNN | YYYY-MM-DD | **+2d** | CVE-XXXX-XXXX | New | <Critical / RANSOMWARE 等のフラグ> |
+| AI-THREAT-NNNN | YYYY-MM-DD | -16d | CVE-XXXX-XXXX | New | overdue |
+
+_上位 5 件まで、 残りは末尾に "and N more (概略)" で 1 行。 件数 0 なら 表自体を省略。_
+
+---
+
+## 📈 トレンド (this_week vs previous_week)
+
+- **Tool Poisoning / MCP Risk: 13 vs 5 (▲160%)** _← 急増は太字_
+- AI Supply Chain: 8 vs 13 (▼38%)
+- AI-generated Code Vulnerability: 5 vs 7 (▼29%)
+
+_該当ゼロなら "目立った変化なし" の 1 行で。_
+
+---
+
+## ✅ 昨日対応済み
+
+- **AI-THREAT-NNNN** (status) — <note の最初の1行>
+
+_該当ゼロなら "新たな対応記録なし" の 1 行で。_
+
+---
+
+## 📝 本日のアクション (優先順)
+
+1. 🔴 **AI-THREAT-NNNN** — <最も急ぐ事。 threat_id 必須>
+2. 🟡 **AI-THREAT-NNNN** — <次>
+3. 🟢 <任意の改善 / 監視タスク>
+
+---
+
+🎬 **Executive takeaway**: <1 文。 例: "Quiet day; only KEV catch-up needed." / "Prompt Injection surge — investigate agent frameworks in use.">
 ```
 
-Close with one sentence — an executive-level takeaway about today's posture (e.g., "Quiet day; only KEV catch-up needed." or "Prompt Injection surge — investigate agent frameworks in use.").
+Rules for the dashboard:
+- `trend` column in the stats table: use ↑ (up vs 7d/14d avg), ↓ (down), → (flat), ⚠ (only for KEV 期限切迫 when ≥1 overdue or +<3d).
+- Priority dots in actions: 🔴 (P0 — today), 🟡 (P1 — this week), 🟢 (P2 — backlog).
+- `days` column in KEV table: positive = days remaining (bold if <3), negative = overdue.
+- Section dividers (`---`) between every block keep scanning easy.
+- Cap each list / table at 5 items; overflow goes into a trailing "and N more" line.
 
 ## Step 5 — Persist the report to file
 
