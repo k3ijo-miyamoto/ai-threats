@@ -30,7 +30,11 @@ from classifiers import (
 )
 from collectors import ArticleFetcher, GitHubAdvisoryCollector, RSSCollector, ThreatItem
 from notifiers import SlackNotifier, TeamsNotifier
-from reports import generate_periodic_report, generate_weekly_report
+from reports import (
+    generate_exec_dashboard,
+    generate_periodic_report,
+    generate_weekly_report,
+)
 from storage import ThreatRecord, ThreatRegister
 from storage.db import now_iso
 
@@ -307,6 +311,23 @@ def cmd_report(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_dashboard(args: argparse.Namespace) -> int:
+    """Render the exec dashboard (Mermaid charts) to docs/exec-dashboard.md.
+
+    Default output is the tracked `docs/exec-dashboard.md`. The content is
+    aggregate-only — counts, generic categories, public source names — and
+    intentionally excludes `affected_asset`, individual threat_ids, and
+    `company_assets.yaml` contents, so it is safe to publish to the OSS repo
+    and link from the README. Override with `--out` if you want a local-only
+    copy under `docs/share-*.md`.
+    """
+    register = ThreatRegister(DEFAULT_SQLITE, DEFAULT_CSV)
+    out_path = Path(args.out) if args.out else (ROOT / "docs" / "exec-dashboard.md")
+    path = generate_exec_dashboard(register, out_path)
+    print(f"dashboard={path}")
+    return 0
+
+
 def cmd_alerts(args: argparse.Namespace) -> int:
     """Surface CVE/KEV-due-soon items that may slip through normal triage."""
     register = ThreatRegister(DEFAULT_SQLITE, DEFAULT_CSV)
@@ -435,6 +456,17 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_stats = sub.add_parser("stats", help="Show register statistics")
     p_stats.set_defaults(func=cmd_stats)
+
+    p_dash = sub.add_parser(
+        "dashboard",
+        help="Render Mermaid exec dashboard (aggregate counts) to docs/exec-dashboard.md",
+    )
+    p_dash.add_argument(
+        "--out",
+        default=None,
+        help="Override output path (default: docs/exec-dashboard.md, tracked)",
+    )
+    p_dash.set_defaults(func=cmd_dashboard)
 
     p_alerts = sub.add_parser("alerts", help="Show KEV due-date alerts and similar urgencies")
     p_alerts.add_argument(
