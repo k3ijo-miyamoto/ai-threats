@@ -312,7 +312,7 @@ def cmd_report(args: argparse.Namespace) -> int:
 
 
 def cmd_dashboard(args: argparse.Namespace) -> int:
-    """Render the exec dashboard (Mermaid charts) to docs/exec-dashboard.md.
+    """Render the aggregate Mermaid dashboard to docs/exec-dashboard.md.
 
     Default output is the tracked `docs/exec-dashboard.md`. The content is
     aggregate-only — counts, generic categories, public source names — and
@@ -459,7 +459,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_dash = sub.add_parser(
         "dashboard",
-        help="Render Mermaid exec dashboard (aggregate counts) to docs/exec-dashboard.md",
+        help="Render Mermaid dashboard (aggregate counts) to docs/exec-dashboard.md",
     )
     p_dash.add_argument(
         "--out",

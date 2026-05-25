@@ -74,12 +74,12 @@ def generate_exec_dashboard(
     # ----------------------------------------------------------------- #
     # 1. Triage funnel (last 30 days)
     # ----------------------------------------------------------------- #
-    # AI-relevance gate: matches what the impact scorer treats as in-scope.
-    # We OR three signals so that classifier-borderline items still count if
-    # they (a) land in an AI category, (b) get is_ai_related=1, or (c) hit a
-    # company asset. We also honour `corrected_category` so human reviews are
-    # not lost. Funnel stages are forced monotone — High etc. are intersected
-    # with the prior stage, so the chart can never widen left-to-right.
+    # In-scope gate: matches what the impact scorer treats as triage-worthy.
+    # We OR three signals so classifier-borderline items still count when
+    # category, is_ai_related, or company_impact indicates relevance. We also
+    # honour `corrected_category` so reviewer overrides are not lost. Funnel
+    # stages are forced monotone — High etc. are intersected with the prior
+    # stage, so the chart can never widen left-to-right.
     def _is_relevant(r: dict) -> bool:
         cat = r.get("corrected_category") or r.get("category") or ""
         return (
@@ -99,7 +99,7 @@ def generate_exec_dashboard(
     funnel_md = (
         "```mermaid\n"
         "flowchart LR\n"
-        f'    A["Collected<br/>{total}"] --> B["AI関連 or 自社アセット<br/>{ai_relevant}"]\n'
+        f'    A["Collected<br/>{total}"] --> B["Triage対象<br/>{ai_relevant}"]\n'
         f'    B --> C["High Priority<br/>{high}"]\n'
         f'    C --> D["通知済<br/>{notified}"]\n'
         f'    D --> E["Actioned / Closed<br/>{resolved}"]\n'
@@ -236,7 +236,7 @@ def generate_exec_dashboard(
     # ----------------------------------------------------------------- #
     # Assemble
     # ----------------------------------------------------------------- #
-    body = f"""# AI Threat Watch — 役員向けダッシュボード
+    body = f"""# AI Threat Watch — Dashboard
 
 _Generated: {now.isoformat(timespec="seconds")} · データソース: `data/threat_register.sqlite`_
 
@@ -247,12 +247,12 @@ GitHub 上で Mermaid 図はそのままレンダリングされます。再生�
 ## 1. Triage ファネル — ノイズ削減ゲートの効き (last 30 days)
 
 直近 30 日に収集した全アイテムが、どのゲートで何件まで絞り込まれたか。
-非 AI 関連の脆弱性は Medium 以下に降格される設計のため、High に残るのは
-「AI 関連 or 自社アセット直撃」のみ。
+AI 関連シグナルを持たない一般的脆弱性は Medium 以下に降格される設計のため、
+High に残るのは Triage 対象として in-scope と判定されたアイテムのみ。
 
 {funnel_md}
 
-**読み方**: `Collected → AI関連 or 自社アセット` の絞り込みがノイズ排除の主役。
+**読み方**: `Collected → Triage対象` の絞り込みがノイズ排除の主役。
 `High → 通知済 → Actioned/Closed` の右肩下がりが運用追従度を表す。
 通知済より Actioned/Closed が極端に少なければトリアージが詰まっているサイン。
 
@@ -260,8 +260,8 @@ GitHub 上で Mermaid 図はそのままレンダリングされます。再生�
 
 ## 2. AI 関連シグナル — 週次トレンド (last 8 weeks)
 
-AI カテゴリ・`is_ai_related` フラグ・自社アセットマッチのいずれかに該当した
-アイテム数の週次推移。急増があればカテゴリ内訳表で当たりをつける。
+Triage 対象 (in-scope) と判定された AI 関連シグナル件数の週次推移。
+急増があればカテゴリ内訳表で当たりをつける。
 
 {trend_md}
 

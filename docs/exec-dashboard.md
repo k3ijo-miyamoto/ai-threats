@@ -1,6 +1,6 @@
-# AI Threat Watch — 役員向けダッシュボード
+# AI Threat Watch — Dashboard
 
-_Generated: 2026-05-25T02:37:39+00:00 · データソース: `data/threat_register.sqlite`_
+_Generated: 2026-05-25T03:05:47+00:00 · データソース: `data/threat_register.sqlite`_
 
 GitHub 上で Mermaid 図はそのままレンダリングされます。再生成は `python main.py dashboard`。
 
@@ -9,12 +9,12 @@ GitHub 上で Mermaid 図はそのままレンダリングされます。再生�
 ## 1. Triage ファネル — ノイズ削減ゲートの効き (last 30 days)
 
 直近 30 日に収集した全アイテムが、どのゲートで何件まで絞り込まれたか。
-非 AI 関連の脆弱性は Medium 以下に降格される設計のため、High に残るのは
-「AI 関連 or 自社アセット直撃」のみ。
+AI 関連シグナルを持たない一般的脆弱性は Medium 以下に降格される設計のため、
+High に残るのは Triage 対象として in-scope と判定されたアイテムのみ。
 
 ```mermaid
 flowchart LR
-    A["Collected<br/>396"] --> B["AI関連 or 自社アセット<br/>82"]
+    A["Collected<br/>396"] --> B["Triage対象<br/>82"]
     B --> C["High Priority<br/>72"]
     C --> D["通知済<br/>72"]
     D --> E["Actioned / Closed<br/>5"]
@@ -22,7 +22,7 @@ flowchart LR
     style E fill:#e8f5e9,stroke:#388e3c
 ```
 
-**読み方**: `Collected → AI関連 or 自社アセット` の絞り込みがノイズ排除の主役。
+**読み方**: `Collected → Triage対象` の絞り込みがノイズ排除の主役。
 `High → 通知済 → Actioned/Closed` の右肩下がりが運用追従度を表す。
 通知済より Actioned/Closed が極端に少なければトリアージが詰まっているサイン。
 
@@ -30,8 +30,8 @@ flowchart LR
 
 ## 2. AI 関連シグナル — 週次トレンド (last 8 weeks)
 
-AI カテゴリ・`is_ai_related` フラグ・自社アセットマッチのいずれかに該当した
-アイテム数の週次推移。急増があればカテゴリ内訳表で当たりをつける。
+Triage 対象 (in-scope) と判定された AI 関連シグナル件数の週次推移。
+急増があればカテゴリ内訳表で当たりをつける。
 
 ```mermaid
 xychart-beta
