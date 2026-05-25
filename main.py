@@ -31,7 +31,7 @@ from classifiers import (
 from collectors import ArticleFetcher, GitHubAdvisoryCollector, RSSCollector, ThreatItem
 from notifiers import SlackNotifier, TeamsNotifier
 from reports import (
-    generate_exec_dashboard,
+    generate_dashboard,
     generate_periodic_report,
     generate_weekly_report,
 )
@@ -312,9 +312,9 @@ def cmd_report(args: argparse.Namespace) -> int:
 
 
 def cmd_dashboard(args: argparse.Namespace) -> int:
-    """Render the aggregate Mermaid dashboard to docs/exec-dashboard.md.
+    """Render the aggregate Mermaid dashboard to docs/dashboard.md.
 
-    Default output is the tracked `docs/exec-dashboard.md`. The content is
+    Default output is the tracked `docs/dashboard.md`. The content is
     aggregate-only — counts, generic categories, public source names — and
     intentionally excludes `affected_asset`, individual threat_ids, and
     `company_assets.yaml` contents, so it is safe to publish to the OSS repo
@@ -322,8 +322,8 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
     copy under `docs/share-*.md`.
     """
     register = ThreatRegister(DEFAULT_SQLITE, DEFAULT_CSV)
-    out_path = Path(args.out) if args.out else (ROOT / "docs" / "exec-dashboard.md")
-    path = generate_exec_dashboard(register, out_path)
+    out_path = Path(args.out) if args.out else (ROOT / "docs" / "dashboard.md")
+    path = generate_dashboard(register, out_path)
     print(f"dashboard={path}")
     return 0
 
@@ -459,12 +459,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_dash = sub.add_parser(
         "dashboard",
-        help="Render Mermaid dashboard (aggregate counts) to docs/exec-dashboard.md",
+        help="Render Mermaid dashboard (aggregate counts) to docs/dashboard.md",
     )
     p_dash.add_argument(
         "--out",
         default=None,
-        help="Override output path (default: docs/exec-dashboard.md, tracked)",
+        help="Override output path (default: docs/dashboard.md, tracked)",
     )
     p_dash.set_defaults(func=cmd_dashboard)
 

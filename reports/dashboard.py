@@ -37,11 +37,11 @@ def _parse_iso(ts: str) -> datetime | None:
     return dt
 
 
-def generate_exec_dashboard(
+def generate_dashboard(
     register: ThreatRegister,
     out_path: str | Path,
 ) -> Path:
-    """Render a Mermaid-based executive dashboard to `out_path`.
+    """Render the aggregate Mermaid dashboard to `out_path`.
 
     Four sections: (1) triage funnel, (2) weekly AI signal trend with category
     breakdown, (3) KEV status + lead-time buckets, (4) source contribution to
@@ -298,7 +298,7 @@ KEV-listed の脆弱性は CISA が修正期限を設定しているため、期
 
 ---
 
-_本ダッシュボードは `reports/exec_dashboard.py` が生成。詳細は
+_本ダッシュボードは `reports/dashboard.py` が生成。詳細は
 [週次レポート](../reports/weekly_report.md) と
 [日次レポート](../reports/daily/) を参照。_
 """

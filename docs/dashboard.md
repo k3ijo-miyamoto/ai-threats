@@ -1,6 +1,6 @@
 # AI Threat Watch — Dashboard
 
-_Generated: 2026-05-25T03:05:47+00:00 · データソース: `data/threat_register.sqlite`_
+_Generated: 2026-05-25T03:20:03+00:00 · データソース: `data/threat_register.sqlite`_
 
 GitHub 上で Mermaid 図はそのままレンダリングされます。再生成は `python main.py dashboard`。
 
@@ -102,6 +102,6 @@ pie showData
 
 ---
 
-_本ダッシュボードは `reports/exec_dashboard.py` が生成。詳細は
+_本ダッシュボードは `reports/dashboard.py` が生成。詳細は
 [週次レポート](../reports/weekly_report.md) と
 [日次レポート](../reports/daily/) を参照。_
