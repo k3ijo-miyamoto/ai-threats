@@ -16,7 +16,15 @@ class GitHubAdvisoryCollector(Collector):
 
     REQUEST_TIMEOUT = 30
     DEFAULT_PER_PAGE = 50
-    DEFAULT_SEVERITY = "high"
+    # Do NOT filter by severity at the API call. GitHub's `severity` query
+    # parameter accepts only one value (e.g. "high"), so passing "high"
+    # silently drops every Medium/Moderate (CVSS 4–6.9) advisory — and many
+    # AI-relevant issues land in that band (Starlette CVE-2026-48710 BadHost
+    # is a textbook case: CVSS 6.5 Medium, but as the routing layer beneath
+    # FastAPI/MCP/vLLM/LiteLLM it is effectively High in our environment).
+    # Let the impact_scorer make the priority call after asset matching and
+    # the AI-relevance gate, instead of cutting at the API.
+    DEFAULT_SEVERITY = ""
 
     def collect(self) -> list[ThreatItem]:
         log.info("GitHub Advisory collect: %s", self.url)

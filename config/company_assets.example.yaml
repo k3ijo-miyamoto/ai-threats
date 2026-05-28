@@ -75,6 +75,17 @@ company_ai_assets:
       - model context protocol
       - mcp server
       - tool poisoning
+      # Upstream/dependency packages commonly used to build MCP servers.
+      # Without these, an advisory like "Starlette BadHost" never mentions
+      # MCP in its text, so the asset match misses an effectively-critical
+      # routing-layer bug.
+      - starlette
+      - fastapi
+      - vllm
+      - litellm
+      - text generation inference
+      - tgi
+      - ollama
     data_access:
       - local_files
       - internal_api

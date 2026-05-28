@@ -146,7 +146,14 @@ def cmd_collect(args: argparse.Namespace) -> int:
                 # — e.g., a GitHub Advisory page that incidentally mentions
                 # "Copilot" in unrelated context would otherwise be tagged as
                 # affecting GitHub Copilot Business.
+                # Also append raw_tags (= package names from GitHub Advisory
+                # `vulnerabilities[].package.name`) so an advisory like
+                # Starlette BadHost — whose body never mentions "starlette"
+                # but whose package tag does — still matches the asset
+                # keyword and reaches the impact_scorer.
                 matching_text = classification.summary or item.summary[:400]
+                if item.raw_tags:
+                    matching_text = f"{matching_text}\n[tags: {' '.join(item.raw_tags)}]"
                 decision = scorer.score(
                     item.title,
                     matching_text,
