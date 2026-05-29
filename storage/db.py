@@ -53,6 +53,31 @@ CREATE TABLE IF NOT EXISTS threat_register (
 CREATE INDEX IF NOT EXISTS idx_threat_collected_at ON threat_register(collected_at);
 CREATE INDEX IF NOT EXISTS idx_threat_priority    ON threat_register(priority);
 CREATE INDEX IF NOT EXISTS idx_threat_status      ON threat_register(status);
+
+-- SBOM (Software Bill of Materials) tables. Each SBOM represents one
+-- "system" we care about (initially: this threat_watch project itself).
+-- Matching an advisory's vulnerable package against any package in any
+-- SBOM is a stronger signal than fuzzy keyword matching, because the
+-- advisory's `vulnerabilities[].package.name` field is structured data
+-- from the advisory creator — no false positive from incidental mentions.
+CREATE TABLE IF NOT EXISTS sboms (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    name          TEXT UNIQUE NOT NULL,
+    source        TEXT,
+    format        TEXT,
+    generated_at  TEXT NOT NULL,
+    payload       TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sbom_packages (
+    sbom_id       INTEGER NOT NULL REFERENCES sboms(id) ON DELETE CASCADE,
+    package_name  TEXT NOT NULL,
+    version       TEXT,
+    ecosystem     TEXT,
+    PRIMARY KEY (sbom_id, package_name, version)
+);
+
+CREATE INDEX IF NOT EXISTS idx_sbom_packages_name ON sbom_packages(package_name);
 """
 
 
@@ -267,6 +292,89 @@ class ThreatRegister:
                 })
         clusters.sort(key=lambda c: (-len(c["members"]), c["cve"]))
         return clusters
+
+    # ------------------------------------------------------------------ #
+    # SBOM
+    # ------------------------------------------------------------------ #
+
+    def upsert_sbom(
+        self,
+        *,
+        name: str,
+        source: str,
+        format: str,
+        payload: str,
+        packages: list[tuple[str, str, str]],
+    ) -> int:
+        """Replace any existing SBOM with the same name and store the new one.
+
+        packages is a list of (package_name, version, ecosystem) tuples.
+        Package names are stored lowercased so matching is case-insensitive.
+        Returns the sbom id.
+        """
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).isoformat()
+        with self._connect() as conn:
+            cur = conn.execute("SELECT id FROM sboms WHERE name = ?", (name,))
+            row = cur.fetchone()
+            if row:
+                sbom_id = int(row["id"])
+                conn.execute(
+                    "UPDATE sboms SET source=?, format=?, generated_at=?, payload=? WHERE id=?",
+                    (source, format, now, payload, sbom_id),
+                )
+                conn.execute("DELETE FROM sbom_packages WHERE sbom_id = ?", (sbom_id,))
+            else:
+                cur = conn.execute(
+                    "INSERT INTO sboms (name, source, format, generated_at, payload) VALUES (?, ?, ?, ?, ?)",
+                    (name, source, format, now, payload),
+                )
+                sbom_id = int(cur.lastrowid)
+            seen: set[tuple[str, str]] = set()
+            for pkg, ver, eco in packages:
+                key = (pkg.lower(), ver or "")
+                if key in seen:
+                    continue
+                seen.add(key)
+                conn.execute(
+                    "INSERT OR IGNORE INTO sbom_packages (sbom_id, package_name, version, ecosystem) VALUES (?, ?, ?, ?)",
+                    (sbom_id, pkg.lower(), ver, eco),
+                )
+            conn.commit()
+        return sbom_id
+
+    def list_sboms(self) -> list[sqlite3.Row]:
+        with self._connect() as conn:
+            cur = conn.execute(
+                "SELECT s.id, s.name, s.source, s.format, s.generated_at, "
+                "(SELECT COUNT(*) FROM sbom_packages WHERE sbom_id = s.id) AS package_count "
+                "FROM sboms s ORDER BY s.name"
+            )
+            return list(cur.fetchall())
+
+    def get_sbom_packages(self, name: str) -> list[sqlite3.Row]:
+        with self._connect() as conn:
+            cur = conn.execute(
+                "SELECT p.package_name, p.version, p.ecosystem "
+                "FROM sbom_packages p JOIN sboms s ON p.sbom_id = s.id "
+                "WHERE s.name = ? ORDER BY p.package_name",
+                (name,),
+            )
+            return list(cur.fetchall())
+
+    def sbom_package_index(self) -> dict[str, list[str]]:
+        """Return {package_name_lower: [sbom_name, ...]} for impact_scorer lookups."""
+        index: dict[str, list[str]] = {}
+        with self._connect() as conn:
+            cur = conn.execute(
+                "SELECT s.name AS sbom_name, p.package_name "
+                "FROM sbom_packages p JOIN sboms s ON p.sbom_id = s.id"
+            )
+            for row in cur.fetchall():
+                index.setdefault(row["package_name"], []).append(row["sbom_name"])
+        return index
+
+    # ------------------------------------------------------------------ #
 
     def kev_due_within(self, days: int = 7) -> list[sqlite3.Row]:
         """Return KEV-listed records whose due date is within `days` from now."""

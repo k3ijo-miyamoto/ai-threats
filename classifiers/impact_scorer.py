@@ -49,7 +49,11 @@ _DEFAULT_ACTIONS = {
 
 
 class ImpactScorer:
-    def __init__(self, company_config: dict[str, Any]) -> None:
+    def __init__(
+        self,
+        company_config: dict[str, Any],
+        sbom_index: dict[str, list[str]] | None = None,
+    ) -> None:
         self._assets: list[dict[str, Any]] = company_config.get("company_ai_assets") or []
         self._high_risk_categories: set[str] = set(
             company_config.get("high_risk_categories") or []
@@ -57,6 +61,10 @@ class ImpactScorer:
         self._critical_keywords: list[str] = [
             k.lower() for k in (company_config.get("critical_keywords") or [])
         ]
+        # {package_name_lower: [sbom_name, ...]} — structured match against
+        # advisory's vulnerabilities[].package.name, complements fuzzy
+        # keyword matching against text. Set via ThreatRegister.sbom_package_index().
+        self._sbom_index: dict[str, list[str]] = sbom_index or {}
 
     def score(
         self,
@@ -67,6 +75,7 @@ class ImpactScorer:
         is_ai_related: bool = True,
         in_kev: bool = False,
         epss_score: float = 0.0,
+        advisory_packages: list[str] | None = None,
     ) -> ImpactDecision:
         blob = f"{title}\n{body}".lower()
         # Be inclusive: trust the classifier's flag, OR an AI-specific category.
@@ -77,6 +86,14 @@ class ImpactScorer:
             keywords = [str(k).lower() for k in (asset.get("keywords") or [])]
             if any(k and _keyword_matches(k, blob) for k in keywords):
                 matched_assets.append(asset)
+
+        # SBOM match: any package the advisory marks as vulnerable that also
+        # exists in one of our SBOMs is an unambiguous structural hit. Add
+        # the matched sbom names alongside any text-based asset matches.
+        sbom_hits: set[str] = set()
+        for pkg in advisory_packages or []:
+            for sbom_name in self._sbom_index.get(str(pkg).lower(), []):
+                sbom_hits.add(sbom_name)
 
         critical_hit = any(_keyword_matches(k, blob) for k in self._critical_keywords)
         # KEV listing or high EPSS score is treated as an objective critical signal,
@@ -89,10 +106,16 @@ class ImpactScorer:
         kev_note = "Listed in CISA KEV (actively exploited)." if in_kev else ""
         epss_note = f"EPSS score {epss_score:.2f}." if epss_score >= 0.7 else ""
 
-        if matched_assets:
+        if matched_assets or sbom_hits:
             company_impact = "Yes"
-            asset_names = ", ".join(a.get("name", "?") for a in matched_assets)
-            reason_parts = [f"Matches company asset(s): {asset_names}."]
+            keyword_names = [a.get("name", "?") for a in matched_assets]
+            sbom_names = sorted(sbom_hits)
+            asset_names = ", ".join([*keyword_names, *(f"SBOM:{n}" for n in sbom_names)])
+            reason_parts = []
+            if keyword_names:
+                reason_parts.append(f"Matches company asset(s): {', '.join(keyword_names)}.")
+            if sbom_names:
+                reason_parts.append(f"Vulnerable package matches SBOM: {', '.join(sbom_names)}.")
             if critical_hit and not (in_kev or epss_score >= 0.7):
                 reason_parts.append("Critical keyword detected (e.g., RCE / credential leak / active exploitation).")
             if kev_note:

@@ -107,7 +107,10 @@ def cmd_collect(args: argparse.Namespace) -> int:
 
     register = ThreatRegister(DEFAULT_SQLITE, DEFAULT_CSV)
     classifier = build_classifier(args.classifier, sqlite_path=str(DEFAULT_SQLITE))
-    scorer = ImpactScorer(company_cfg)
+    sbom_index = register.sbom_package_index()
+    if sbom_index:
+        log.info("SBOM index loaded: %d unique packages across SBOMs", len(sbom_index))
+    scorer = ImpactScorer(company_cfg, sbom_index=sbom_index)
     enricher = CVEEnricher(cache_dir=DATA_DIR / "cache")
     fetcher = ArticleFetcher() if not args.no_fetch_body else None
 
@@ -162,6 +165,7 @@ def cmd_collect(args: argparse.Namespace) -> int:
                     is_ai_related=classification.is_ai_related,
                     in_kev=enrichment.in_kev,
                     epss_score=enrichment.epss_max_score,
+                    advisory_packages=item.raw_tags,
                 )
             except Exception as exc:  # noqa: BLE001
                 log.exception("Classification failed for %s: %s", item.url, exc)
@@ -358,6 +362,151 @@ def cmd_alerts(args: argparse.Namespace) -> int:
 _ALLOWED_STATUSES = {"New", "Reviewing", "Actioned", "Closed", "FalsePositive"}
 
 
+def cmd_sbom(args: argparse.Namespace) -> int:
+    """SBOM management: generate / list / show / rescore."""
+    import json as _json
+    import sqlite3
+    import subprocess
+
+    register = ThreatRegister(DEFAULT_SQLITE, DEFAULT_CSV)
+    action = args.sbom_action
+
+    if action == "list":
+        rows = register.list_sboms()
+        if not rows:
+            print("(no SBOMs registered)")
+            return 0
+        print(f"{'name':<24}  {'pkgs':>5}  {'format':<25}  generated_at")
+        for r in rows:
+            print(f"{r['name']:<24}  {r['package_count']:>5}  {(r['format'] or ''):<25}  {r['generated_at']}")
+        return 0
+
+    if action == "show":
+        rows = register.get_sbom_packages(args.name)
+        if not rows:
+            print(f"(no packages for SBOM {args.name!r}; check `python main.py sbom list`)")
+            return 1
+        for r in rows:
+            print(f"  {r['package_name']:<30}  {(r['version'] or ''):<16}  {r['ecosystem'] or ''}")
+        print(f"\n{len(rows)} packages")
+        return 0
+
+    if action == "generate":
+        target = args.path or "environment"
+        sbom_name = args.name
+        log.info("Generating SBOM (%s) via cyclonedx-py", target)
+        if target == "environment":
+            cmd = ["cyclonedx-py", "environment", "--output-format", "json"]
+        else:
+            cmd = ["cyclonedx-py", "requirements", str(target), "--output-format", "json"]
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        except FileNotFoundError:
+            print("cyclonedx-py not installed. Run: uv pip install -r requirements-sbom.txt")
+            return 1
+        if result.returncode != 0:
+            print(f"cyclonedx-py failed (exit {result.returncode}): {result.stderr[:500]}")
+            return result.returncode
+        try:
+            payload_obj = _json.loads(result.stdout)
+        except _json.JSONDecodeError as exc:
+            print(f"cyclonedx-py output was not JSON: {exc}")
+            return 2
+        comps = payload_obj.get("components") or []
+        pkgs: list[tuple[str, str, str]] = []
+        for c in comps:
+            name = c.get("name") or ""
+            if not name:
+                continue
+            version = c.get("version") or ""
+            purl = c.get("purl") or ""
+            ecosystem = "python"
+            if purl.startswith("pkg:"):
+                # e.g., pkg:pypi/requests@2.33.0 -> "pypi"
+                try:
+                    ecosystem = purl.split("pkg:", 1)[1].split("/", 1)[0]
+                except IndexError:
+                    pass
+            pkgs.append((name, version, ecosystem))
+        sbom_id = register.upsert_sbom(
+            name=sbom_name,
+            source=f"cyclonedx-py target={target}",
+            format=f"{payload_obj.get('bomFormat','CycloneDX')} {payload_obj.get('specVersion','')} JSON".strip(),
+            payload=result.stdout,
+            packages=pkgs,
+        )
+        print(f"SBOM {sbom_name!r} stored (id={sbom_id}, {len(pkgs)} packages)")
+        return 0
+
+    if action == "rescore":
+        import yaml as _yaml
+        from classifiers.impact_scorer import ImpactScorer
+
+        company_cfg = _load_yaml(CONFIG_DIR / "company_assets.yaml")
+        sbom_index = register.sbom_package_index()
+        if not sbom_index:
+            print("(no SBOM data; run `python main.py sbom generate` first)")
+            return 1
+        scorer = ImpactScorer(company_cfg, sbom_index=sbom_index)
+        promoted = 0
+        with sqlite3.connect(DEFAULT_SQLITE) as conn:
+            conn.row_factory = sqlite3.Row
+            cur = conn.execute(
+                "SELECT threat_id, title, summary, category, severity, is_ai_related, "
+                "in_kev, epss_max_score, extra_json, company_impact, priority "
+                "FROM threat_register"
+            )
+            for row in cur.fetchall():
+                extra = {}
+                try:
+                    extra = _json.loads(row["extra_json"] or "{}")
+                except _json.JSONDecodeError:
+                    pass
+                raw_tags = extra.get("raw_tags") or []
+                if not raw_tags:
+                    continue
+                # Quick filter: only rescore if any tag is in sbom index
+                if not any(t.lower() in sbom_index for t in raw_tags):
+                    continue
+                matching_text = (row["summary"] or "")[:400] + "\n[tags: " + " ".join(raw_tags) + "]"
+                decision = scorer.score(
+                    row["title"], matching_text,
+                    row["category"], row["severity"],
+                    is_ai_related=bool(row["is_ai_related"]),
+                    in_kev=bool(row["in_kev"]),
+                    epss_score=row["epss_max_score"] or 0.0,
+                    advisory_packages=raw_tags,
+                )
+                # Match SBOM signal even if company_impact/priority are unchanged
+                # (e.g., already Yes via keyword match) — the affected_asset
+                # should still expand to record the SBOM hit.
+                cur2 = conn.execute(
+                    "SELECT affected_asset FROM threat_register WHERE threat_id=?",
+                    (row["threat_id"],),
+                )
+                current_asset = (cur2.fetchone() or [""])[0] or ""
+                if (decision.company_impact != row["company_impact"]
+                        or decision.priority != row["priority"]
+                        or decision.affected_asset != current_asset):
+                    conn.execute(
+                        "UPDATE threat_register SET company_impact=?, affected_asset=?, "
+                        "reason=?, priority=? WHERE threat_id=?",
+                        (decision.company_impact, decision.affected_asset,
+                         decision.reason, decision.priority, row["threat_id"]),
+                    )
+                    promoted += 1
+                    print(f"  {row['threat_id']}: impact={row['company_impact']}→{decision.company_impact} "
+                          f"prio={row['priority']}→{decision.priority} "
+                          f"asset={current_asset!r}→{decision.affected_asset!r}")
+            conn.commit()
+        print(f"rescore done: {promoted} records updated via SBOM match")
+        register.export_csv()
+        return 0
+
+    print(f"unknown sbom action: {action}")
+    return 2
+
+
 def cmd_review(args: argparse.Namespace) -> int:
     """Record human review on a threat: status, correction, note."""
     import sqlite3
@@ -474,6 +623,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="Override output path (default: docs/dashboard.md, tracked)",
     )
     p_dash.set_defaults(func=cmd_dashboard)
+
+    p_sbom = sub.add_parser("sbom", help="Manage SBOMs (generate / list / show / rescore)")
+    sbom_sub = p_sbom.add_subparsers(dest="sbom_action", required=True)
+    p_sbom_gen = sbom_sub.add_parser("generate", help="Generate a SBOM via cyclonedx-py")
+    p_sbom_gen.add_argument("--name", default="threat-watch", help="Logical SBOM name (default: threat-watch)")
+    p_sbom_gen.add_argument("--path", default=None,
+                            help="requirements.txt path; omit to scan the current venv")
+    p_sbom_list = sbom_sub.add_parser("list", help="List stored SBOMs")
+    p_sbom_show = sbom_sub.add_parser("show", help="Show packages of a stored SBOM")
+    p_sbom_show.add_argument("name", help="SBOM name (see `sbom list`)")
+    p_sbom_rescore = sbom_sub.add_parser("rescore",
+        help="Re-evaluate stored threats against current SBOMs (in-place company_impact / priority update)")
+    p_sbom.set_defaults(func=cmd_sbom)
 
     p_alerts = sub.add_parser("alerts", help="Show KEV due-date alerts and similar urgencies")
     p_alerts.add_argument(
